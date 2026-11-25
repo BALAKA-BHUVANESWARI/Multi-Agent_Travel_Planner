@@ -1,0 +1,17 @@
+.env
+*.db
+*.db.graph
+*.db.graph-shm
+*.db.graph-wal
+*.db-wal
+*.db-shm
+__pycache__/
+.pytest_cache/
+.venv/
+evals/__pycache__/
+.place_cache/
+traces.jsonl
+server_restart.log
+push_result.log
+diagnose.txt
+history_result.log
