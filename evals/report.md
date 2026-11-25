@@ -14,8 +14,8 @@
 | rain | **100%** | 90% | 19 / 20 prompts |
 | prices | **100%** | 100% | 19 / 20 prompts |
 | schema | **100%** | 100% | 19 / 20 prompts |
-| mean latency (ms) | 7 | 4 | all |
-| mean tool calls | 4.7 | 3.5 | all |
+| mean latency (ms) | 7 | 6 | all |
+| mean tool calls | 5.9 | 4.4 | all |
 
 Latency here is pure compute with instant mock tools; with real network tools the parallel fan-out saves roughly the sum of the three slowest worker latencies per pass (see the concurrency test).
 
@@ -58,20 +58,20 @@ Latency here is pure compute with instant mock tools; with real network tools th
 
 | Prompt | Score | Reason |
 |---|---|---|
-| goa-standard | 4 | The list is heavy on beach options (Baga, Vagator, Palolem, sunset cruise) and food experiences (seafood thali, spice pl |
+| goa-standard | 4 | The list is heavily weighted toward beach activities (Baga, Vagator, Palolem, sunset cruise) and food experiences (seafo |
 | jaipur-generous | 4 | Most activities are historic sites, matching the 'history' preference, and the list includes a dedicated shopping stop ( |
 | manali-family | 4 | The list heavily features nature‑focused activities (waterfalls, walks, temple settings, forest, lake) and includes seve |
-| udaipur-relaxed | 4 | The list includes several food‑related experiences (cooking class, lakeside dinner) and many cultural attractions (palac |
-| goa-monsoon | 1 | The traveler wants beach activities, but all listed options are indoor, cultural, or food experiences with no direct bea |
-| kochi-monsoon | 2 | Only the Kerala sadya/seafood lunch (and occasional cafe stops) align with the food preference; none of the listed activ |
+| udaipur-relaxed | 5 | The list is dominated by cultural sites (palaces, temples, folk dance, gardens) and food‑related experiences (cooking cl |
+| goa-monsoon | 1 | The traveler only wants beach activities, but all listed options are cultural sites, indoor downtime, food, or spa exper |
+| kochi-monsoon | 2 | Only one activity directly satisfies the food preference (Kerala sadya/seafood lunch). None of the listed activities inv |
 | per-person-budget | 5 | All listed activities are historic sites (palaces, forts, observatory) that directly align with the traveler's interest  |
 | rishikesh-ground | 2 | Only the sunset viewpoint activity aligns with nature; none provide real adventure, and the rest are cultural or leisure |
-| hampi-from-bengaluru | 4 | Most activities (walking tour, museum, market, restaurant) cater to cultural and historical interests, with only the sun |
-| bangkok-international | 3 | The list includes several food‑focused activities (dinner, market/street‑food, cafe) that align well with the food prefe |
+| hampi-from-bengaluru | 4 | Most activities (walking tour, museum, market/food stroll) directly address culture and history, while the dinner and su |
+| bangkok-international | 4 | Most activities (dinner, market street‑food, cafe) directly satisfy the food preference, and the sunset setting offers a |
 | paris-impossible | 3 | Two of the three activities (the walking tour and the market/food stroll) align with the traveller's culture and food in |
 | tokyo-rainy-june | 4 | Most activities (walking tour, market/food stroll, restaurant dinner, museum visit) directly align with food and culture |
 
-Mean: 3.33. LLM judges are noisy: spot-check a few by hand (below).
+Mean: 3.50. LLM judges are noisy: spot-check a few by hand (below).
 
 ## Human spot-check
 
@@ -111,14 +111,16 @@ Nonstop, early-morning out / evening back: out 05:45 (arrive 08:55), back 19:45 
 - 09:30-11:00 Basilica of Bom Jesus and Se Cathedral
 - 16:45-19:45 Airport transfer and flight home
 
-## Budget (estimated)
-- Flight: ₹24,400
-- Hotel: ₹10,400
-- Activities: ₹3,700
-- Food: ₹8,000
-- **Total: ₹46,500** of ₹60,000 (within budget); ₹23,250 per person
-
-Flight and hotel prices are synthetic ESTIMATES, not live fares.
+## Top sights (most prominent first)
+1. Baga Beach (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat - planned Day 1 15:30
+2. Fort Aguada and lighthouse (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 4 09:30
+3. Basilica of Bom Jesus and Se Cathedral (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 5 09:30
+4. Fontainhas Latin Quarter walk (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 2 14:00
+5. Spice plantation tour with lunch (Nature): best morning (7:00-10:00) or late afternoon (16:00-18:00) - planned Day 3 09:30
+6. Mandovi river sunset cruise (Viewpoint): best sunrise or sunset (check the local times for your dates) - planned Day 3 18:30
+7. Vagator Beach sunset (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat - planned Day 1 18:30
+8. Water sports at Calangute (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat
+  - Ranked by how prominent each place is in Wikipedia, Wikivoyage and OpenStreetMap (free sources have no live visitor counts). Timings are general advice by ki
 ```
 
 ### goa-monsoon
@@ -161,14 +163,12 @@ Nonstop, mid-morning out / late-afternoon back: out 09:00 (arrive 10:36), back 1
 - 13:30-16:30 Airport transfer and flight home
   - Rain expected: replaced 'Baga Beach' with a flexible indoor block.
 
-## Budget (estimated)
-- Flight: ₹10,600
-- Hotel: ₹7,800
-- Activities: ₹5,000
-- Food: ₹9,600
-- **Total: ₹33,000** of ₹1,00,000 (within budget); ₹16,500 per person
-
-Flight and hotel prices are synthetic ESTIMATES, not live fares.
+## Top sights (most prominent first)
+1. Baga Beach (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat
+2. Fort Aguada and lighthouse (Historical): best early morning (8:00-10:00), before the crowds and the heat
+3. Basilica of Bom Jesus and Se Cathedral (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 2 09:30
+4. Fontainhas Latin Quarter walk (Historical): best early morning (8:00-10:00), before the crowds and the heat
+5. Spice plantation tour with lunch (Nature): best morning (7:00-10:00) or late 
 ```
 
 ### goa-tight-budget
@@ -206,12 +206,14 @@ Nonstop, early-morning out / evening back: out 05:45 (arrive 08:55), back 19:45 
 - 09:30-10:30 Shri Mangueshi Temple
 - 16:45-19:45 Airport transfer and flight home
 
-## Budget (estimated)
-- Flight: ₹24,400
-- Hotel: ₹10,400
-- Activities: ₹3,700
-- Food: ₹8,000
-- **Total: ₹46,500** of ₹50,000 (within budget); ₹23,250 per person
-
-Flight and hotel prices are synthetic ESTIMATES, not live fares.
+## Top sights (most prominent first)
+1. Baga Beach (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat - planned Day 1 15:30
+2. Fort Aguada and lighthouse (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 2 09:30
+3. Basilica of Bom Jesus and Se Cathedral (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 3 09:30
+4. Fontainhas Latin Quarter walk (Historical): best early morning (8:00-10:00), before the crowds and the heat - planned Day 2 14:00
+5. Spice plantation tour with lunch (Nature): best morning (7:00-10:00) or late afternoon (16:00-18:00) - planned Day 4 09:30
+6. Mandovi river sunset cruise (Viewpoint): best sunrise or sunset (check the local times for your dates) - planned Day 3 18:30
+7. Vagator Beach sunset (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat - planned Day 1 18:30
+8. Water sports at Calangute (Beach): best early morning, or 16:00-18:30 for the sunset; avoid the midday heat
+  - Ranked by how prominent each place is in Wikipedia, Wikivoyage and OpenStreetMap (free sources have no live visitor count
 ```
