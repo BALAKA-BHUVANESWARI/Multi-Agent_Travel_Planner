@@ -13,6 +13,7 @@ git remote get-url origin >nul 2>&1 || git remote add origin %REPO%
 rem Safety: never commit secrets or local data.
 git rm -r --cached --ignore-unmatch .env travel_planner.db* traces.jsonl .place_cache >> %LOG% 2>&1
 set MSG=%~1
+if "%MSG%"=="" if exist phase_message.txt set /p MSG=<phase_message.txt
 if "%MSG%"=="" set MSG=Update travel planner (%date% %time%)
 git add -A >> %LOG% 2>&1
 git commit -m "%MSG%" >> %LOG% 2>&1

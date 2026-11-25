@@ -9,6 +9,19 @@ itinerary with a flight, a hotel and a budget breakdown. **You approve the plan 
 The normal tier comes to ₹63,500, so the Budget agent sends it back to the Supervisor, which re-plans on the
 "cheaper" tier (₹46,500). The Critic checks it, and you get an approval screen.
 
+## Trip guide: top sights and where to eat
+
+Every plan also includes:
+
+* **Top sights**: the most prominent places (historical, waterfalls, beaches, spiritual, viewpoints...) ranked, each with a
+  label and a good time to visit (waterfalls also get a season note). Far day trips are left out of the ranking.
+* **Where to eat**: top restaurants split into **vegetarian** and **non-vegetarian** (places that serve both appear in
+  both), with opening hours as listed, or a typical lunch/dinner window marked "not stated: check before you go".
+  Places whose diet is not stated appear under "menu not specified".
+
+Free sources have no star ratings, so "top" means *most prominent* (traveller-listed on Wikivoyage, Wikidata/Wikipedia
+entry, website, stated hours), and the plan says so. Tool: `search_dining`.
+
 ## What it demonstrates
 
 LangGraph orchestration, supervisor pattern, parallel fan-out/join, shared typed state, conditional routing,
@@ -88,6 +101,7 @@ Details: [`docs/architecture.md`](docs/architecture.md), [`docs/decisions.md`](d
 | Any place you name | Resolved in this order: 5 curated destinations + 14 origin cities -> built-in list of ~190 popular places -> **Open-Meteo geocoding** (free, no key, GeoNames data). A name nobody knows is never guessed: the planner asks again. Regions and countries ("Kerala", "Japan") ask for a specific city or town | source shown in the log |
 | Places (curated) | Goa, Jaipur, Manali, Kochi, Udaipur: hand-written list with **estimated** entry prices | "estimated" |
 | Places (any other destination) | Four free sources asked at the same time and merged by name: **Wikivoyage** "See"/"Do" listings (best for small towns), **OpenStreetMap** (Overpass; wikidata/heritage/tourism tags), **Wikipedia** nearby articles (kind taken from the Wikidata description; stubs ignored) and the Wikivoyage page text for tips. A notability score ranks them and a per-kind cap keeps the list varied. Sights 7 km or more from the town centre (by a distance in the Wikivoyage listing, its coordinates, or a Wikipedia position looked up by name) are marked **day trips** and always rank after nearby sights. None of them has prices, so entry fees are **estimated** from the kind of place and the country's price level. Each lookup is cached on disk for 30 days (`.place_cache/`), and the shared Overpass server gets a short time budget with mirror fallback because it is often at capacity. If every source fails the plan uses clearly generic suggestions (walking tour, market, dinner) and says so in a warning | "estimated" + warning |
+| Restaurants | **Wikivoyage** "Eat" listings (best for small towns) + **OpenStreetMap** restaurants (diet and cuisine tags). Ranked by prominence, not stars. No prices, so meals are covered by the food allowance | "estimated" + note |
 | Tips / knowledge | Wikivoyage text -> local TF-IDF vector store (CC BY-SA, attributed) | attributed |
 | Nearby ideas | OpenStreetMap via Overpass (ODbL). **No prices exist, so these never enter the itinerary or budget** | "no prices" |
 | Flights, trains and hotels | **Synthetic estimator** (great-circle distance, season, country price level; no free real API exists). Under 300 km it prices a train/bus instead of a flight; international trips get higher per-km fares, long-haul (> 9,000 km) gets one-stop options only. Hotels scale with the country's price level and city size | "estimated" everywhere |
@@ -130,6 +144,7 @@ On Windows, double-click `run_tests.bat` for the tests and `run_evals.bat` for t
   sights come from OpenStreetMap and costs are rough estimates. International trips show a warning because visas,
   insurance and currency costs are not included. All money is shown in INR.
 * Place supply is finite: long trips on the `cheapest` tier may leave a few slots empty (a warning says so).
+* Restaurants: the public OpenStreetMap server is slow (about 40 s for a big city) and the lookup runs in the background, so dense cities such as Paris may show no restaurants (and small towns may have few veg/non-veg labels). Hours are as listed on the source.
 * Open-Meteo is for non-commercial use; keep the attribution.
 * The mock booking cannot be undone or modified because nothing real happens.
 

@@ -20,6 +20,8 @@ and record it yourself with any screen recorder.
    March, budget 30k for 2*. Show that a small town gets named sights (Wikivoyage / OpenStreetMap / Wikipedia),
    a train/bus instead of a flight under 300 km, the "estimated" labels, and that far towns (Sanawar, Subathu) are not scheduled: they are day trips ranked last. Open the Agent log and show the
    **Run** line: seconds, slowest agent, tool and LLM calls, cost $0.
+5c. **Top sights and where to eat** (30 s): plan *3 days in Hampi from Bangalore in January, budget 30k for 2*. Show the
+   ranked **Top sights** card (label and best time) and **Where to eat** (veg / non-veg columns, hours).
 6. **Approve** (20 s): approve, show the MOCK booking id, click approve again (same id, idempotent).
 7. **Resilience** (optional, CLI): in `python -c` or a test, run with `InProcessClient(failures={"search_hotels": -1})`
    to show a partial plan with warnings, or restart the server mid-approval and resume the same thread.

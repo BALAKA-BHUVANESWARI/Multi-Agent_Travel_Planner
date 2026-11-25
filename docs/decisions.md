@@ -73,3 +73,9 @@
 * **Overpass grace period.** If Wikivoyage + Wikipedia already found at least 6 sights, the (often overloaded)
   Overpass lookup gets only 4 more seconds; it keeps running in the background and fills the 30-day cache for next time.
   A live Kasauli run spent 18.7 s in the places agent waiting for Overpass before this.
+* **Top sights and dining.** Asked for ranked sights and veg / non-veg restaurants with good timings. Free sources have no
+  star ratings, so ranking uses a prominence score and the output says so. Diet is classified from name, description and
+  OSM `diet:*` / `cuisine` tags into veg, both, non-veg or unknown; unknown places are shown separately instead of guessed.
+  Timings come from a per-kind table (sights) or the listed hours (restaurants), with an explicit "not stated" when typical.
+* **Restaurant lookups are best effort.** Overpass needed about 40 s for a light Paris query, so the restaurant lookup has
+  its own 60 s budget, runs beside the places agent, is waited for only briefly, and fills the 30-day cache for next time.
