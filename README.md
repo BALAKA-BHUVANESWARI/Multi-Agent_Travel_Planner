@@ -144,7 +144,7 @@ On Windows, double-click `run_tests.bat` for the tests and `run_evals.bat` for t
   sights come from OpenStreetMap and costs are rough estimates. International trips show a warning because visas,
   insurance and currency costs are not included. All money is shown in INR.
 * Place supply is finite: long trips on the `cheapest` tier may leave a few slots empty (a warning says so).
-* Restaurants: the public OpenStreetMap server is slow (about 40 s for a big city) and the lookup runs in the background, so dense cities such as Paris may show no restaurants (and small towns may have few veg/non-veg labels). Hours are as listed on the source.
+* Restaurants: for big cities split into districts (Paris) the list comes from the first district pages on Wikivoyage; the public OpenStreetMap server is slow (about 40 s) and runs in the background, so its extra places may only appear on a repeat plan. Hours are as listed on the source; places without a stated diet appear under "menu not specified".
 * Open-Meteo is for non-commercial use; keep the attribution.
 * The mock booking cannot be undone or modified because nothing real happens.
 

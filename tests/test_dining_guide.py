@@ -174,3 +174,23 @@ def test_dense_city_query_is_the_light_one():
     light = osm.restaurants_query(48.85, 2.35, 1500)
     assert '["wikidata"]' in light and "opening_hours" not in light and "timeout:60" in light
     assert "opening_hours" in osm.restaurants_query(15.3, 76.4, 3500)
+
+
+def test_big_city_eat_listings_come_from_district_pages(tmp_path, monkeypatch):
+    from travel_planner.rag import wikivoyage as wv
+    from travel_planner.tools import cache
+    monkeypatch.setattr(cache, "get", lambda k: None)
+    monkeypatch.setattr(cache, "put", lambda k, v: None)
+    pages = {
+        "Bigcity": "==Districts==\n[[Bigcity/Old Town]] and [[Bigcity/Harbour|the harbour]]\n==Eat==\n",
+        "Bigcity/Old Town": "==Eat==\n{{eat|name=Cafe Uno|lat=1.0|long=2.0|content=Good coffee}}\n",
+        "Bigcity/Harbour": "==Eat==\n{{eat|name=Fish House|content=Seafood}}\n{{eat|name=Cafe Uno}}\n",
+    }
+    got = wv.live_eat_listings("Bigcity", fetch=lambda t: pages[t])
+    assert [e["tags"]["name"] for e in got] == ["Cafe Uno", "Fish House"]
+
+
+def test_district_titles_from_links_and_regionlist():
+    from travel_planner.rag import wikivoyage as wv
+    txt = "{{Regionlist|region1name=1st arrondissement|region2name=[[X|2nd]]}} [[Paris/Louvre]]"
+    assert wv.district_titles("Paris", txt) == ["Paris/Louvre", "Paris/1st arrondissement", "Paris/2nd"]

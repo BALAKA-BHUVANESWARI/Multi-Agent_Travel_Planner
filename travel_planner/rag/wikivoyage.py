@@ -273,17 +273,63 @@ def parse_eat_listings(wikitext: str) -> list[dict]:
     return out
 
 
+MAX_DISTRICTS = 4
+
+
+def district_titles(title: str, wikitext: str) -> list[str]:
+    """Sub-pages of a big city ("Paris/1st arrondissement"): linked as [[Title/Part]] or named in a Regionlist."""
+    out: list[str] = []
+    prefix = title.strip() + "/"
+    for m in re.finditer(r"\[\[(" + re.escape(prefix) + r"[^\]|#]+)", wikitext):
+        t = m.group(1).strip()
+        if t not in out:
+            out.append(t)
+    for m in re.finditer(r"\bregion\d+name\s*=\s*((?:\[\[[^\]]*\]\]|[^|\n}])+)", wikitext, re.I):
+        t = prefix + re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", m.group(1)).strip()
+        if len(t) > len(prefix) and t not in out:
+            out.append(t)
+    return out[:MAX_DISTRICTS]
+
+
 def eat_listings(title: str, fetch: Callable[[str], str] | None = None) -> list[dict]:
-    """Restaurants from a Wikivoyage page's Eat section; [] on any failure. Cached on disk (30 days)."""
+    """Restaurants from a Wikivoyage page's Eat section (for a big city split into districts: from its first
+    district pages); [] on any failure. Cached on disk (30 days)."""
+    from concurrent.futures import ThreadPoolExecutor
     from ..tools import cache
-    key = f"wikivoyage-eat:v1:{title.lower()}"
+    key = f"wikivoyage-eat:v2:{title.lower()}"
     cached = cache.get(key)
     if cached is not None:
         return cached
+    get = fetch or _fetch_wikitext
     try:
-        found = parse_eat_listings((fetch or _fetch_wikitext)(title))
+        text = get(title)
+        found = parse_eat_listings(text)
+        if not found:
+            subs = district_titles(title, text)
+            if subs:
+                with ThreadPoolExecutor(max_workers=len(subs)) as pool:
+                    pages = list(pool.map(lambda t: _safe_text(get, t), subs))
+                seen = set()
+                for page in pages:
+                    for el in parse_eat_listings(page):
+                        nm = el["tags"]["name"].lower()
+                        if nm not in seen:
+                            seen.add(nm)
+                            el["id"] = len(found) + 1
+                            found.append(el)
+                found = found[:MAX_LISTINGS]
     except Exception:                                        # noqa: BLE001 - any failure means "no listings"
         return []
     if found:
         cache.put(key, found)
     return found
+
+
+def _safe_text(get: Callable[[str], str], title: str) -> str:
+    try:
+        return get(title)
+    except Exception:                                        # noqa: BLE001 - one bad district page is fine
+        return ""
+
+
+live_eat_listings = eat_listings          # tests replace the name above; this stays the real one
