@@ -19,11 +19,32 @@ function mapStops(itinerary) {
   return { stops, missing };
 }
 
+// open on the first day that has a route to show
+const firstRouteDay = (itinerary, stops) =>
+  itinerary.days.find((d) => stops.filter((s) => s.day === d.day).length > 1)?.day ?? 0;
+
+const duration = (minutes) => {
+  const total = Math.max(1, Math.round(minutes));
+  return total < 60 ? `${total} min` : `${Math.floor(total / 60)} h ${total % 60} min`;
+};
+
+function RouteNote({ route, day }) {
+  if (route.state === "loading") return "Finding the road route…";
+  if (route.state === "road") {
+    return `Day ${day} route by car, in stop order: about ${route.km.toFixed(1)} km, ${duration(route.minutes)} of ` +
+      "driving, without live traffic or time at the stops. Route from OSRM using OpenStreetMap data.";
+  }
+  if (route.state === "straight") {
+    return "The road route could not be loaded, so the dashed blue line only shows the visiting order.";
+  }
+  return day ? "This day has fewer than two places on the map, so there is no route." : "Choose a day to see its route.";
+}
+
 export default function MapCard({ itinerary, centre }) {
   const { stops, missing } = mapStops(itinerary);
-  const [day, setDay] = useState(0);
+  const [day, setDay] = useState(() => firstRouteDay(itinerary, stops));
   const boxRef = useRef(null);
-  const unavailable = useLeafletMap(boxRef, stops, day, centre);
+  const { unavailable, plain, route } = useLeafletMap(boxRef, stops, day, centre);
 
   const dayButton = (value, label) => (
     <button key={value} data-day={value} aria-pressed={day === value} onClick={() => setDay(value)}>{label}</button>
@@ -42,10 +63,12 @@ export default function MapCard({ itinerary, centre }) {
           </p>
         )}
       </div>
+      {!unavailable && <p id="routeNote" style={{ margin: "8px 0 0", fontSize: 14 }}><RouteNote route={route} day={day} /></p>}
       <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
+        {plain && "The English map could not be loaded, so this is the standard map with local-language names. "}
         {stops.length} planned stop(s) shown
         {missing ? `; ${missing} without a fixed location (such as a meal or walk) are not on the map` : ""}.
-        Lines show visiting order, not roads. Hotels are not plotted because the planner picks a hotel category,
+        To draw a route, the positions of that day's sights are sent to the OSRM routing server. Hotels are not plotted because the planner picks a hotel category,
         not a specific property.
       </p>
     </div>

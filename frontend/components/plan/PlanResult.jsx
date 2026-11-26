@@ -8,7 +8,6 @@ import TravelChoices from "./TravelChoices.jsx";
 export default function PlanResult({ result, lastRequest, onPlan, onDecide, onRun, onResult, onSignIn }) {
   const pickPlace = (baseRequest) => (name) => {
     onPlan(withDestination(baseRequest, name), result.group);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   if (NO_PLAN_STATUSES.includes(result.status)) {

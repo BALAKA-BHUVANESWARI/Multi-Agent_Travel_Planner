@@ -25,6 +25,7 @@ Built on **LangGraph** and **MCP**. It runs on free tiers and free data sources,
 
 | Feature | Summary |
 |---|---|
+| Dashboard | A trip form or plain language, agent status, and 10 popular destinations in India to start from |
 | Plan any destination | A day-by-day itinerary with times, top sights, where to eat (veg and non-veg), a map and a budget breakdown |
 | Choose how to travel | Flight, train, bus, car or bike, with price, time and estimated emissions side by side |
 | Change the plan by chatting | "make it cheaper", "add 1 person", "go by train", "more food" |
@@ -42,7 +43,7 @@ Details of each feature are in [docs/features.md](docs/features.md).
 | Agents | Python, LangGraph (parallel fan-out, `interrupt()`, SQLite checkpoints), MCP tools |
 | AI models | Groq, then Gemini, then Ollama, then plain rules (all optional) |
 | Backend | FastAPI, SQLite |
-| Frontend | React, built with esbuild, Leaflet maps |
+| Frontend | React, built with esbuild; Leaflet with OpenFreeMap vector maps and OSRM road routes |
 | Data | Open-Meteo, OpenStreetMap, Wikipedia, Wikivoyage, Tavily (optional) |
 | Quality | pytest, evaluation set with a single-agent baseline |
 
@@ -90,7 +91,7 @@ change requests, so a run can never loop forever. See [docs/architecture.md](doc
 │   └── Dockerfile
 ├── frontend/
 │   ├── app/                 # page entry point and styles
-│   ├── components/          # account, planner, plan, toolkit, emergency
+│   ├── components/          # dashboard, account, planner, plan, toolkit, emergency
 │   ├── hooks/               # account, planner, group and map state
 │   ├── services/            # API client and formatting helpers
 │   └── package.json

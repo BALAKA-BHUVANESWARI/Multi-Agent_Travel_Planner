@@ -1,5 +1,6 @@
-const ATTRIBUTION = "Weather data by Open-Meteo.com · Place data and map tiles © OpenStreetMap contributors · " +
-  "Sights and local tips from Wikipedia and Wikivoyage (CC BY-SA) · Emergency number sources are shown with each result.";
+const ATTRIBUTION = "Weather data by Open-Meteo.com · Place data © OpenStreetMap contributors · " +
+  "Map by OpenFreeMap © OpenMapTiles · Road routes by OSRM · " +
+  "Sights and local tips from Wikipedia and Wikivoyage (CC BY-SA) · Photos from Wikimedia (each links to its licence) · Emergency number sources are shown with each result.";
 
 export default function Footer({ health }) {
   return (

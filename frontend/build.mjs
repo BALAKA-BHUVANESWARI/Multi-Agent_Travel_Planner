@@ -20,6 +20,11 @@ const options = {
 rmSync("dist", { recursive: true, force: true });
 mkdirSync("dist");
 copyFileSync("index.html", "dist/index.html");
+// the vector map libraries are ready-made browser files, loaded by index.html next to app.js
+for (const file of ["maplibre-gl/dist/maplibre-gl.js", "maplibre-gl/dist/maplibre-gl.css",
+  "@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"]) {
+  copyFileSync(`node_modules/${file}`, `dist/${file.split("/").pop()}`);
+}
 
 if (watch) {
   const context = await esbuild.context(options);

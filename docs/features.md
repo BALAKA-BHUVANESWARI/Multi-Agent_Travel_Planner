@@ -68,6 +68,16 @@ Every plan also includes:
 Free sources have no star ratings, so "top" means *most prominent* (traveller-listed on Wikivoyage, Wikidata/Wikipedia
 entry, website, stated hours), and the plan says so. Tool: `search_dining`.
 
+## Dashboard
+
+| Feature | How it works |
+|---|---|
+| Trip form | From, to, start date, days, travellers, budget and interests become one plain sentence for the planner. Leave "To" empty for suggestions. The date picker covers tomorrow to about eleven months ahead, because the sentence carries no year; a trip picked for the 31st starts on the 30th. A second tab takes a request in your own words. |
+| Agent status | Shows the four stages and whether the request is working, waiting for an answer or ready. There is no percentage: the server answers once, at the end. |
+| Top 10 destinations in India | Agra, Jaipur, Goa, Delhi, Alleppey, Varanasi, Udaipur, Amritsar, Manali, Leh. A hand-picked list, not an official ranking, with rough best months and trip length. No ratings or prices, because the planner has no source for them. |
+| Photos | The lead picture of a Wikipedia article, loaded by the visitor's browser, with a link to its photographer and licence. A drawing is shown if it cannot load, and for itineraries outside the ten places. |
+| Other boxes | The current itinerary, places that are good in the chosen month, and a travel style from the chosen interests. |
+
 ## Suggestions, changes, groups, accounts and the map
 
 | Feature | How it works |
@@ -79,7 +89,7 @@ entry, website, stated hours), and the plan says so. Tool: `search_dining`.
 | Accounts and memory | Optional local accounts. A signed-in traveller gets "My trips" and saved defaults (home city, interests, travel mode, pace), learned from approved bookings or edited by hand. They only fill what a request does not say, and the plan says when they were used. The budget is never remembered. |
 | Booking cancellation | Two steps: see the refund, then confirm. Booking, cancellation and the refund policy are all **mock**. |
 | API rate limits | Per signed-in user or client address: 10 plans a minute and 200 a day, 30 actions a minute, 8 sign-in tries a minute. Over the limit returns HTTP 429 with `Retry-After`. |
-| Interactive map | Leaflet with OpenStreetMap tiles, all days or one day. Needs internet access. Positions are approximate; stops with no fixed location and hotels are not plotted. |
+| Interactive map | Leaflet with an OpenFreeMap vector map: black names in English where the map data has one, town and district names highlighted. One day shows numbered, highlighted stop names and a blue road route in visiting order, with distance and driving time from the free OSRM demo server (driving only, no live traffic; light non-commercial use, at most one request a second). Only the sights' positions are sent. If routing fails, a dashed line shows the order; if the vector map fails, the standard OpenStreetMap map is used. Needs internet access. Positions are approximate; stops with no fixed location and hotels are not plotted. |
 
 Endpoints: `POST /api/v1/booking/{thread_id}/cancel` (`{"confirm": true}`), `POST /api/v1/auth/register|login|logout`,
 `GET|DELETE /api/v1/me`, `PUT|DELETE /api/v1/me/memory`, `GET /api/v1/trips`. `POST /api/v1/plan` also accepts

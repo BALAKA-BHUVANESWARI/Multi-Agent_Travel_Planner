@@ -157,3 +157,19 @@ Entries above this section use the file names of their time.
 * **No train or bus.** The planner has no through service to price, so a fare and travel time would be made up.
 * **Never suggested.** A traveller can choose the drive, but destination suggestions leave it out.
 
+
+## Map names and routes (2026-11-26)
+* **Why:** the standard map tiles are pictures that show each place in its local language (Thai in Bangkok), so their
+  names cannot be changed. A vector map sends names as text, so the app can pick English and choose the colours.
+* **OpenFreeMap** needs no key. If it cannot be drawn, the standard OpenStreetMap map is shown and the page says so.
+* **Routes come from the OSRM demo server.** It is for light, non-commercial use, at most one request a second, with
+  no guarantee. The app asks only for the day on screen, spaces requests, remembers answers, and sends only the
+  positions of planned sights. A public or commercial launch would need its own or a paid routing service.
+* **No invented roads.** If routing fails, a dashed line shows the visiting order and is labelled as such.
+
+## Dashboard (2026-11-26)
+* **Nothing invented.** A dashboard design usually shows star ratings, "from" prices, a progress percentage and
+  notification counts. The app has no source for them, so they are left out.
+* **Every menu item does something.** There is no Settings entry because there are no settings beyond the profile.
+* **Emergency help stays one click away** at the top of the page and in the menu, with or without signing in.
+* **Frontend only.** The form writes the same plain sentence a person could type, so the backend is unchanged.

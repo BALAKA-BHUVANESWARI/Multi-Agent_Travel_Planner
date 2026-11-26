@@ -111,7 +111,7 @@ writes never conflict. Only `log` and `warnings` are append-only (reducers). Nod
 * User text sent to an LLM is wrapped as data; the system prompt says never to follow instructions inside it.
 * LLM output cannot change money: it can only reorder already-filtered candidates, fill missing intake fields
   (validated against the catalog and ranges), or add an overview whose rupee figures must match the plan.
-* React escapes every string it shows. The one place that builds HTML (map pop-ups) escapes it first, and links from
+* React escapes every string it shows. The one place that builds HTML (map labels and pop-ups) escapes it first, and links from
   outside data are used only if they start with `https://`.
 
 ## MCP

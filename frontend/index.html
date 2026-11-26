@@ -7,6 +7,10 @@
 <!-- Leaflet (BSD-2) draws the map; the integrity hashes stop a changed CDN file from running. -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==" crossorigin="" defer></script>
+<!-- vector map with English names: copied from npm into the build, so it is served by this app -->
+<link rel="stylesheet" href="maplibre-gl.css">
+<script src="maplibre-gl.js" defer></script>
+<script src="leaflet-maplibre-gl.js" defer></script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
