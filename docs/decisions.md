@@ -22,7 +22,7 @@
 
 * **Why:** a planner limited to five cities is a demo. Users name any place, so the tools accept a resolved
   place (`destination_geo`) and only use the hand-written catalog when the slug is curated.
-* **Resolution order** (`tools/geo.py`): curated -> offline gazetteer (~190 places, deterministic tests/evals) ->
+* **Resolution order** (`services/geo_service.py`): curated -> offline gazetteer (~190 places, deterministic tests/evals) ->
   Open-Meteo geocoding. A fuzzy match must be >= 0.72 similar to the typed name; regions/countries are rejected
   with a request for a specific city. Nothing is invented.
 * **Hard constraints stay in code:** every price still comes from a tool result and the Critic recomputes totals.
@@ -134,4 +134,19 @@
   sources, marks the figures as estimates and treats small gaps as a tie. Flights show the figure with and without
   high-altitude warming. India's published bus figure is for city buses, so coaches use the UK coach factor.
 * **Expenses are typed in rupees.** No live currency conversion, so the comparison cannot drift with exchange rates.
+
+## Project layout (2026-11-26)
+* **Why:** the first layout was one flat package that grew with every feature (one agents file passed 1,000 lines), so a
+  new reader could not see how the system fits together.
+* **Backend and frontend are separate**, and the backend is split by layer: `api -> services -> graph -> agents -> tools ->
+  integrations`. File names say what is inside. Folders that would have been empty were not created.
+* **Behaviour did not change.** Planning results for a fixed set of scenarios and the evaluation scores were compared
+  before and after, and the old and new web pages were driven through the same browser steps.
+* **React with esbuild only.** Two runtime packages (`react`, `react-dom`) and one build tool keep the install small. The
+  backend serves the built files, so there is one address and no cross-origin setup.
+* **One data folder.** Everything written while running goes to `.runtime/`, so the project root stays clean. A relative
+  `TRIP_DB` or `TRACE_FILE` is placed there too, which keeps an older `.env` working.
+* **API paths moved to `/api/v1`.**
+
+Entries above this section use the file names of their time.
 

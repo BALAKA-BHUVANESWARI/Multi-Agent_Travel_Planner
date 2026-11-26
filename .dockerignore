@@ -1,0 +1,11 @@
+# Only the two source folders go into the image, so keys and local data in the project folder cannot.
+*
+!backend
+!frontend
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+frontend/dist
+**/.env
+**/.env.*
+**/*.db

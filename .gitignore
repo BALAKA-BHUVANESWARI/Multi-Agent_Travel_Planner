@@ -1,20 +1,33 @@
+# Secrets
 .env
+.env.*
+!.env.example
+
+# Data the app creates while running (database, caches, traces, logs)
+.runtime/
 *.db
 *.db.graph
-*.db.graph-shm
-*.db.graph-wal
 *.db-wal
 *.db-shm
+*.db.graph-wal
+*.db.graph-shm
+.place_cache/
+traces.jsonl
+live_probe/
+*.log
+diagnose.txt
+
+# Python
 __pycache__/
 .pytest_cache/
 .venv/
-evals/__pycache__/
-.place_cache/
-traces.jsonl
-server_restart.log
-push_result.log
-diagnose.txt
-history_result.log
+
+# Web page
+node_modules/
+frontend/dist/
+
+# Local only
+.vscode/
 phase_message.txt
-live_probe/
 backup_*.zip
+_to_delete/

@@ -3,7 +3,8 @@
 A screen recording was not produced during the build (no display in the build environment). Follow this script
 and record it yourself with any screen recorder.
 
-1. **Start** (10 s): `uvicorn travel_planner.api:create_app --factory` and open http://127.0.0.1:8000.
+1. **Start** (10 s): double-click `scripts\run_server.bat` (or, from `backend/`,
+   `python -m uvicorn app.main:create_app --factory --port 8000`) and open http://127.0.0.1:8000.
    Point at the footer: mode (rule-based or LLM-assisted), engine, attributions.
 2. **Happy path with a retry** (60 s): click the first sample prompt
    (*5 day trip to Goa from Delhi in December, budget 60k for 2*).

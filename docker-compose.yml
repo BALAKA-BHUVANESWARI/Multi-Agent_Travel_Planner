@@ -1,0 +1,20 @@
+# Start:  docker compose up --build      then open http://127.0.0.1:8000
+services:
+  planner:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"        # reachable from this computer only
+    env_file:
+      - path: .env                   # optional API keys (needs Docker Compose 2.24 or newer)
+        required: false
+    environment:
+      TRIP_DB: travel_planner.db     # a plain file name keeps the database in the volume below
+      TRACE_FILE: traces.jsonl
+    volumes:
+      - planner-data:/app/.runtime
+    restart: unless-stopped
+
+volumes:
+  planner-data:
