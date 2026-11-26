@@ -17,14 +17,16 @@ FLIGHT_BY_STRATEGY = {"normal": "best", "cheaper": "early_late", "cheapest": "on
 MODE_LABEL = {"flight": "Flight", "train": "Train", "bus": "Bus", "car": "Car", "bike": "Bike"}
 
 
-def _journey(c: dict, option: dict, today: date) -> dict | None:
-    """When an overland journey really starts and ends, with a warning when it is long or can no longer be made."""
+def _journey(c: dict, option: dict, today: date, border_warning: str = "") -> dict | None:
+    """When an overland journey really starts and ends, with a warning when it crosses a doubtful border, is long
+    or can no longer be made."""
     if option.get("mode") not in ("train", "bus", "car", "bike"):
         return None
     start = date.fromisoformat(c["start_date"])
     before, after = option.get("leave_days_before", 0), option.get("return_days_after", 0)
     leave, home = start - timedelta(days=before), start + timedelta(days=c["days"] - 1 + after)
-    notes = [transport.long_journey_warning(option["mode"], option["duration_h"], before + after, c["days"])]
+    notes = [border_warning,
+             transport.long_journey_warning(option["mode"], option["duration_h"], before + after, c["days"])]
     if leave < today:
         notes.append(f"You would have had to leave on {short_date(leave.isoformat())}, which has passed: "
                      "choose a later start date.")
@@ -49,7 +51,7 @@ def build_travel_options(c: dict, deps, usual: str | None = None) -> list[dict]:
                         "cheapest_pp": cheapest, "duration_h": best["duration_h"], "detail": best["label"],
                         "note": best.get("note", ""), "estimated": True, "usual": mode == usual,
                         "co2_kg_pp": (footprint.for_trip(c, mode) or {}).get("kg_pp"),
-                        **(_journey(c, best, deps.today) or {})})
+                        **(_journey(c, best, deps.today, res.get("border_warning", "")) or {})})
         except (ToolError, KeyError, ValueError) as e:
             out.append({"mode": mode, "label": MODE_LABEL[mode], "available": False, "reason": str(e),
                         "estimated": True})
@@ -106,7 +108,7 @@ def flight_node(state: dict, deps) -> dict:
                       "fetched_at": res.get("fetched_at"), "price_basis": res.get("price_basis")},
            "log": [entry("flight", f"picked '{sel['id']}' {fmt_inr(sel['price_pp'])} pp "
                                    f"({price_tag(res) if live else 'estimated'})")]}
-    journey = _journey(c, sel, deps.today)
+    journey = _journey(c, sel, deps.today, res.get("border_warning", ""))
     if journey:
         out["flight"]["journey"] = journey                 # always describes the option that is selected now
     emissions = footprint.for_trip(c, sel.get("mode"))

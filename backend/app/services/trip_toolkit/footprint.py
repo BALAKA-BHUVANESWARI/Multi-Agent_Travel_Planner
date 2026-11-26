@@ -124,9 +124,7 @@ def _unavailable(mode: str, km: float, o: dict, d: dict) -> str:
         return ""
     if transport.crosses_sea((o["lat"], o["lon"], o["cc"]), (d["lat"], d["lon"], d["cc"])):
         return "No road or rail link: this trip crosses the sea."
-    if o["cc"] and d["cc"] and o["cc"] != d["cc"] and km > transport.MAX_INTERNATIONAL_KM:
-        return "Too far to go overland between countries."
-    return ""
+    return transport.overland_block(mode, km, o["cc"], d["cc"])
 
 
 def _advice(rows: list[dict], selected: str | None, travelers: int) -> list[str]:

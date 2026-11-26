@@ -87,7 +87,7 @@ def test_every_mode_with_a_land_route_can_be_chosen_however_far(dest, mode):
 @pytest.mark.parametrize("origin,dest,why", [
     ("delhi", "Port Blair", "crosses the sea"),           # same country, but an island
     ("chennai", "Colombo", "crosses the sea"),            # short hop, but across the sea
-    ("delhi", "Bangkok", "between countries"),
+    ("delhi", "Paris", "between these countries"),
 ])
 @pytest.mark.parametrize("mode", GROUND)
 def test_no_practical_land_route_is_refused(origin, dest, why, mode):
@@ -228,10 +228,10 @@ def test_a_departure_date_that_has_passed_is_called_out(make):
 
 
 def test_unavailable_modes_say_why(make):
-    _, s = ask(make, "Plan a 4 day trip to Bangkok from Delhi in December, budget 2 lakh for 2")
+    _, s = ask(make, "Plan a 4 day trip to Paris from Delhi in December, budget 4 lakh for 2")
     opts = {o["mode"]: o for o in s["travel_options"]}
     assert opts["flight"]["available"] and not any(opts[m]["available"] for m in GROUND)
-    assert "between countries" in opts["car"]["reason"] and "not available" in s["message"]
+    assert "between these countries" in opts["car"]["reason"] and "not available" in s["message"]
 
 
 def test_a_saved_travel_mode_is_highlighted_not_silently_applied(make):

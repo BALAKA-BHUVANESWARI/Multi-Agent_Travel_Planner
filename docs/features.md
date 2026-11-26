@@ -20,6 +20,13 @@ Pondicherry by bike, for example, adds 10 days of travel to a 4-day trip. Meals 
 Overland travel is unavailable only where it makes no sense: across the sea (Andaman, Lakshadweep, Sri Lanka and other
 islands in the list in `backend/app/services/pricing/transport_estimator.py`, which is not complete) or more than 1,500 km between countries.
 
+**One long international exception: India and Thailand.** Car and bike can be chosen, and the choice card, plan and
+summary carry a warning: the route goes through north-east India and Myanmar, border crossings may be closed or
+restricted, and you must check access, permits, visas, vehicle papers and safety with official sources. The estimate
+leaves out permit, visa and escort costs, and the real road is likely longer than the straight-line estimate. Train and
+bus stay blocked because the planner has no through service to price. Suggestions never propose this drive. Other
+routes are added to `ROAD_LINKS` only after a road link has been confirmed.
+
 If you are signed in, your usual way of travelling is highlighted on the choice screen; you are still asked.
 Set `ASK_TRAVEL_MODE=0` to switch the question off (the planner then picks a flight, or train/bus for short trips).
 

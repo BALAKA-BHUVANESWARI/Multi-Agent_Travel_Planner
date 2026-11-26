@@ -58,8 +58,9 @@ def search_flights(origin: str, destination: str, depart_date: str, return_date:
             raise ToolError("No road or rail link: this trip crosses the sea. Try flight.", retryable=False)
         days = (ret - dep).days + 1
         options, basis = transport.options_for(mode, km, o_cf, d["cost_factor"], travelers, days,
-                                               international, jitter)
-        return {"source": "synthetic-estimator", "estimated": True, "origin": origin, "destination": destination,
+                                               (o_cc, d_cc), jitter)
+        warning = transport.border_warning(mode, km, o_cc, d_cc)
+        return {**({"border_warning": warning} if warning else {}),"source": "synthetic-estimator", "estimated": True, "origin": origin, "destination": destination,
                 "depart_date": depart_date, "return_date": return_date, "travelers": travelers,
                 "distance_km": round(km), "currency": "INR", "price_basis": basis, "mode": mode,
                 "international": international, "options": options}

@@ -166,7 +166,7 @@ def test_impossible_change_keeps_the_plan_and_the_revision(make, text):
 
 def test_impossible_road_mode_is_refused(make):
     p = make()
-    first = p.start("Plan a 4 day trip to Bangkok from Mumbai in January, budget 3 lakh for 2")
+    first = p.start("Plan a 4 day trip to Paris from Mumbai in January, budget 5 lakh for 2")
     s = revise(p, first, "go by bike")
     assert s["constraints"].get("travel_mode") is None and s["revisions"] == 0
 

@@ -43,6 +43,7 @@ def estimate_trip(origin: str, origin_geo: dict | None, slug: str, geo: dict, st
         acts = ACTIVITY_ALLOWANCE * (geo["cost_factor"] ** 0.8) * days * travelers * (0.5 if pick else 1.0)
         out[key] = int(round_to(travel * travelers + night * nights * rooms + food + acts, 500))
     out["travel_mode"] = fl["mode"]
+    out["border_warning"] = fl.get("border_warning", "")
     out["travel_hours"] = next((o["duration_h"] for o in fl["options"] if o["id"] == "best"), 0)
     return out
 
@@ -74,7 +75,8 @@ def recommend_destinations(origin: str, start_date: str, days: int, travelers: i
             est = estimate_trip(origin, origin_geo, slug, geo, start, days, travelers, mode)
         except ToolError:                                    # e.g. no land route for the chosen road mode
             continue
-        if transport.is_long(mode or "", est["travel_hours"]):  # don't SUGGEST a very long ride (picking is free)
+        # don't SUGGEST a very long ride or a doubtful border crossing (picking the place yourself is free)
+        if est["border_warning"] or transport.is_long(mode or "", est["travel_hours"]):
             continue
         matched = [t for t in wanted if t in tags]
         in_season = start.month in months

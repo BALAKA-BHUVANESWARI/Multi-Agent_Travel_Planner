@@ -150,3 +150,10 @@
 
 Entries above this section use the file names of their time.
 
+## Long international road routes (2026-11-26)
+* **Why:** for Mumbai to Bangkok only a flight could be chosen. The traveller picked: open car and bike, with warnings.
+* **A short list, not a rule.** Only India and Thailand are listed. Sources disagree on whether the Myanmar crossings can
+  be used, so the app does not claim the route is open. It tells the traveller what to check.
+* **No train or bus.** The planner has no through service to price, so a fare and travel time would be made up.
+* **Never suggested.** A traveller can choose the drive, but destination suggestions leave it out.
+

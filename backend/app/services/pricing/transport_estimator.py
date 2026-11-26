@@ -3,7 +3,8 @@
 Like the flight estimator these are SYNTHETIC ESTIMATES (straight-line distance x a road factor x a per-km rate
 scaled by the places' price levels). Every option carries ``estimated: True``. The traveller decides how to travel:
 a long journey is never refused, it is marked as long. A mode raises a non-retryable ToolError only when there is
-no practical way over land (across the sea, or a long way between countries).
+no road or rail link (across the sea), or when a long route between countries is not one the planner offers
+(see ROAD_LINKS).
 """
 from __future__ import annotations
 
@@ -14,7 +15,17 @@ from app.tools.errors import ToolError
 
 MODES = ("flight", "train", "bus", "car", "bike")
 ROAD_FACTOR = 1.25                 # straight-line km -> road/rail km
-MAX_INTERNATIONAL_KM = 1500        # overland between countries only for short hops (visa/border costs not included)
+MAX_INTERNATIONAL_KM = 1500        # between countries, longer overland trips need an entry in ROAD_LINKS
+# Long international routes with a road link, as (countries) -> (modes offered, warning). Add one only after
+# confirming that a road exists. There is no train or bus here: the planner has no through service to price.
+ROAD_LINKS = {
+    frozenset(("IN", "TH")): (
+        ("car", "bike"),
+        "Check before you plan: this route goes through north-east India and Myanmar. The border crossings may be "
+        "closed or restricted. Confirm that you and your vehicle (above all a rented one) may cross, and check "
+        "permits, visas, vehicle papers and safety advice with official sources. The estimate leaves out permit, "
+        "visa and escort costs, and the real road is likely longer, slower and dearer than shown."),
+}
 
 # mode -> average km/h including stops
 _SPEED = {"train": 55.0, "bus": 45.0, "car": 55.0, "bike": 45.0}
@@ -29,7 +40,7 @@ _LONG_ADVICE = {"train": "Check that a direct train runs; you may have to change
 _SEA_COUNTRIES = {"LK", "MV", "JP", "PH", "TW", "IS", "AU", "NZ", "MU", "SC", "FJ", "MG", "CY", "MT", "CU", "JM",
                   "BS", "BB"}
 _ISLAND_REGIONS = (("Andaman and Nicobar", 6.5, 14.0, 92.0, 94.5), ("Lakshadweep", 8.0, 12.5, 71.0, 74.0),
-                   ("Hawaii", 18.5, 22.5, -160.5, -154.5))
+                   ("Hawaii", 18.5, 22.5, -160.5, -154.5), ("Samui islands", 9.4, 10.15, 99.75, 100.15))
 OVERNIGHT_H = 9.0                  # a train/bus journey longer than this leaves the evening (or days) before
 HALT_H = 9.0                       # a car/bike journey longer than this is split over two days (night halt)
 HALT_REST_H = 10.0                 # hours of rest in that halt
@@ -77,10 +88,32 @@ def long_journey_warning(mode: str, hours: float, extra_days: int, days: int) ->
             f"{days}-day trip.{advice} Meals on the way are not in the budget.")
 
 
-def _check(mode: str, straight_km: float, international: bool) -> tuple[float, float]:
-    if international and straight_km > MAX_INTERNATIONAL_KM:
-        raise ToolError(f"Too far to go overland between countries ({round(straight_km)} km): try flight.",
-                        retryable=False)
+def overland_block(mode: str, straight_km: float, o_cc: str | None, d_cc: str | None) -> str:
+    """'' when this overland mode may be chosen between the two countries, otherwise why not."""
+    if not (o_cc and d_cc) or o_cc == d_cc or straight_km <= MAX_INTERNATIONAL_KM:
+        return ""
+    link = ROAD_LINKS.get(frozenset((o_cc, d_cc)))
+    if not link:
+        return (f"Not offered between these countries over {MAX_INTERNATIONAL_KM:,} km ({round(straight_km):,} km): "
+                "the planner has not confirmed a road link. Try flight.")
+    if mode not in link[0]:
+        return (f"The planner has no through {mode} service it can price on this route. Try flight, or car or bike "
+                "after checking the border.")
+    return ""
+
+
+def border_warning(mode: str, straight_km: float, o_cc: str | None, d_cc: str | None) -> str:
+    """The warning for a long international road route that is offered, otherwise ''."""
+    if not (o_cc and d_cc) or o_cc == d_cc or straight_km <= MAX_INTERNATIONAL_KM:
+        return ""
+    link = ROAD_LINKS.get(frozenset((o_cc, d_cc)))
+    return link[1] if link and mode in link[0] else ""
+
+
+def _check(mode: str, straight_km: float, countries: tuple) -> tuple[float, float]:
+    why = overland_block(mode, straight_km, *countries)
+    if why:
+        raise ToolError(why, retryable=False)
     km = road_km(straight_km)
     return km, duration_hours(mode, km)
 
@@ -146,11 +179,11 @@ def _opt(id_: str, label: str, mode: str, hours: float, price_total: float, trav
 
 
 def options_for(mode: str, straight_km: float, o_cf: float, d_cf: float, travelers: int, days: int,
-                international: bool, jitter: float) -> tuple[list[dict], str]:
+                countries: tuple, jitter: float) -> tuple[list[dict], str]:
     """Three options (ids best / early_late / one_stop, the same ids the strategy ladder uses) for a mode."""
     if mode not in _SPEED:
         raise ToolError(f"unknown travel mode '{mode}'", retryable=False)
-    km, hours = _check(mode, straight_km, international)
+    km, hours = _check(mode, straight_km, countries)
     cf = (o_cf + d_cf) / 2
     halts_n = halts_each_way(mode, hours)
     if mode in ("train", "bus"):
