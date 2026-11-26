@@ -92,4 +92,5 @@ def test_fastapi_app():
     assert client.post(f"/api/v1/approve/{tid}", json={"action": "bogus"}).status_code == 422
     assert client.post(f"/api/v1/approve/{tid}", json={"action": "approve"}).json()["status"] == "booked"
     assert client.get("/api/v1/plan/missing").status_code == 404
-    assert "Travel Planner" in client.get("/").text
+    page = client.get("/")
+    assert page.status_code == 200 and "<title>" in page.text   # the built app, or the "not built yet" page

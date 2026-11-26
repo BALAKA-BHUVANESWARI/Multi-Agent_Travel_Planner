@@ -8,7 +8,7 @@ from app.core import config
 
 CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
                  ".svg": "image/svg+xml", ".ico": "image/x-icon"}
-NOT_BUILT = b"""<!doctype html><meta charset="utf-8"><title>Travel Planner</title>
+NOT_BUILT = b"""<!doctype html><meta charset="utf-8"><title>ExecuTrip: Wish-to-Way</title>
 <body style="font-family:system-ui;max-width:640px;margin:48px auto;padding:0 16px">
 <h1>The web app is not built yet</h1>
 <p>The API is running. To build the page, run these in the <code>frontend</code> folder, then reload:</p>

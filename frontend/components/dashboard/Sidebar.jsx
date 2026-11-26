@@ -1,4 +1,5 @@
 import Icon from "./Icon.jsx";
+import Logo from "./Logo.jsx";
 
 const ITEMS = [
   ["home", "Home", "home"],
@@ -13,8 +14,8 @@ export default function Sidebar({ active, onSelect }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="logo"><Icon name="route" size={22} /></span>
-        <span><b>Travel Planner</b><small>Multi-Agent AI</small></span>
+        <span className="logo"><Logo size={30} /></span>
+        <span><b>ExecuTrip:</b><small>Wish-to-Way</small></span>
       </div>
       <nav aria-label="Main">
         {ITEMS.map(([key, label, icon]) => (

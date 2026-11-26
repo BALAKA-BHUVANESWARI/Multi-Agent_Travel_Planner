@@ -6,7 +6,7 @@ main { min-width:0; padding:0 18px 60px; }
            padding:18px 12px; display:flex; flex-direction:column; gap:18px; }
 .brand { display:flex; gap:10px; align-items:center; }
 .brand b { display:block; font-size:17px; line-height:1.2; }
-.brand small { color:var(--muted); font-size:12px; }
+.brand small { color:#5b3df5; font-size:13px; font-weight:700; }
 .logo { display:grid; place-items:center; width:38px; height:38px; flex:none; border-radius:12px; color:#fff;
         background:linear-gradient(135deg,#1d5cff,#7b4dff); }
 .sidebar nav { display:flex; flex-direction:column; gap:4px; }
@@ -29,7 +29,15 @@ main { min-width:0; padding:0 18px 60px; }
 .hero-top #account { background:rgba(255,255,255,.92); border-radius:12px; padding:5px 10px; }
 .hero-top button.sos { background:#fff; }
 .hero-text { position:relative; z-index:1; max-width:640px; }
-.hero h1 { font-size:38px; line-height:1.12; margin:0 0 10px; color:#11285c; }
+.hero h1 { font-size:42px; line-height:1.14; margin:0 0 10px; color:#11285c; letter-spacing:-.5px; }
+.hero-name { display:flex; gap:12px; align-items:center; }
+.hero h1 .logo { width:50px; height:50px; border-radius:15px; box-shadow:0 6px 16px rgba(29,92,255,.28); }
+.hero-tagline { display:flex; gap:10px; align-items:center; }
+.hero-tagline b { background:linear-gradient(90deg,#1d5cff,#7b4dff); -webkit-background-clip:text; background-clip:text;
+                  color:transparent; }
+.hero-tagline i { font-style:normal; font-size:.8em; color:#7b4dff; }
+/* the gradient letters would vanish when the system forces its own colours */
+@media (forced-colors:active) { .hero-tagline b { background:none; color:CanvasText; } }
 .hero p { margin:0 0 16px; font-size:16px; max-width:400px; color:#1f2e52; }
 .hero ul { display:flex; flex-wrap:wrap; gap:8px; margin:0; padding:0; list-style:none; }
 .hero li { display:flex; gap:7px; align-items:center; background:#fff; border-radius:999px; padding:6px 12px 6px 7px;
@@ -154,7 +162,8 @@ button.link { border:0; background:none; padding:0; color:var(--brand); font-siz
   .hero { margin:0 -10px; padding:12px 14px 56px; }
   .hero::after { background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.72)); }
   .hero-top { justify-content:flex-start; margin-bottom:14px; }
-  .hero h1 { font-size:28px; }
+  .hero h1 { font-size:30px; }
+  .hero h1 .logo { width:40px; height:40px; border-radius:12px; }
   .places { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .places .photo { height:96px; }
   .tiles { grid-template-columns:minmax(0,1fr); }
