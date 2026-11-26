@@ -2,6 +2,17 @@
 // its file page, which names the photographer and licence.
 const SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/";
 const known = new Map();
+// very large pictures are served already scaled down, from the "thumb" host
+const PICTURE_HOSTS = ["upload.wikimedia.org", "thumb.wikimedia.org"];
+
+const isPicture = (source) => {
+  try {
+    const url = new URL(source);
+    return url.protocol === "https:" && PICTURE_HOSTS.includes(url.hostname) && !/\.svg(\/|$)/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+};
 
 // Wikimedia serves only some thumbnail widths, so `width` must be one of them (500 and 1280 are)
 function sized(data, width) {
@@ -14,7 +25,9 @@ function sized(data, width) {
 function filePage(source) {
   const url = new URL(source);
   const host = url.pathname.startsWith("/wikipedia/commons/") ? "commons.wikimedia.org" : "en.wikipedia.org";
-  return `https://${host}/wiki/File:${url.pathname.split("/").pop()}`;
+  // a scaled copy's address is .../thumb/a/ab/<file name>/<width>px-<file name>
+  const parts = url.pathname.split("/");
+  return `https://${host}/wiki/File:${parts.includes("thumb") ? parts[parts.length - 2] : parts[parts.length - 1]}`;
 }
 
 async function look(titles, width) {
@@ -24,8 +37,10 @@ async function look(titles, width) {
       if (!response.ok) continue;
       const data = await response.json();
       const original = data.originalimage?.source;
-      if (!original || !original.startsWith("https://upload.wikimedia.org/") || /\.svg$/i.test(original)) continue;
-      return { src: sized(data, width), page: filePage(original) };
+      if (!original || !isPicture(original)) continue;
+      const src = sized(data, width);
+      if (!isPicture(src)) continue;
+      return { src, page: filePage(original) };
     } catch {
       // offline or blocked: the drawing stays
     }
