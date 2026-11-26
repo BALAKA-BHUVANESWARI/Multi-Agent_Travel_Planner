@@ -16,3 +16,5 @@ push_result.log
 diagnose.txt
 history_result.log
 phase_message.txt
+live_probe/
+backup_*.zip

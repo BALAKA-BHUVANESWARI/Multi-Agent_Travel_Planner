@@ -22,6 +22,8 @@ and record it yourself with any screen recorder.
    **Run** line: seconds, slowest agent, tool and LLM calls, cost $0.
 5c. **Top sights and where to eat** (30 s): plan *3 days in Hampi from Bangalore in January, budget 30k for 2*. Show the
    ranked **Top sights** card (label and best time) and **Where to eat** (veg / non-veg columns, hours).
+5d. **Travel mode** (20 s): plan *4 day trip to Jaipur from Delhi in December, budget 60k for 2* without saying how you travel.
+   Show the five options with price and hours, click *Train*, and show that only the train is planned.
 6. **Approve** (20 s): approve, show the MOCK booking id, click approve again (same id, idempotent).
 7. **Resilience** (optional, CLI): in `python -c` or a test, run with `InProcessClient(failures={"search_hotels": -1})`
    to show a partial plan with warnings, or restart the server mid-approval and resume the same thread.

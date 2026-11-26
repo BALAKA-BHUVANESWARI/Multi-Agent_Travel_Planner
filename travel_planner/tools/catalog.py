@@ -201,6 +201,33 @@ DESTINATIONS = {
     },
 }
 
+# Approximate map positions of the curated landmarks (for the map only; never used for prices or timings).
+# Experiences without one fixed spot (a spa session, a food walk) have no entry and are not plotted.
+_COORDS = """
+goa-baga 15.556 73.752; goa-aguada 15.492 73.774; goa-basilica 15.501 73.912; goa-fontainhas 15.496 73.832
+goa-vagator 15.598 73.734; goa-water 15.544 73.755; goa-anjuna 15.574 73.740; goa-palolem 15.010 74.023
+goa-temple 15.445 73.968; goa-aviation 15.376 73.839; goa-cruise 15.501 73.830
+jp-amber 26.986 75.851; jp-citypalace 26.926 75.824; jp-hawamahal 26.924 75.827; jp-jantar 26.925 75.825
+jp-nahargarh 26.937 75.816; jp-chokhi 26.767 75.836; jp-johari 26.920 75.826; jp-albert 26.912 75.820
+jp-jalmahal 26.954 75.846; jp-galtaji 26.917 75.858; jp-birla 26.892 75.816
+mn-solang 32.317 77.157; mn-hadimba 32.248 77.181; mn-oldmanali 32.254 77.176; mn-vashisht 32.263 77.188
+mn-mall 32.243 77.189; mn-manu 32.255 77.175; mn-naggar 32.113 77.165
+kc-nets 9.969 76.242; kc-mattancherry 9.958 76.259; kc-jewtown 9.957 76.260; kc-hillpalace 9.953 76.364
+kc-marine 9.977 76.275; kc-cherai 10.142 76.178; kc-stfrancis 9.966 76.241
+ud-citypalace 24.576 73.684; ud-pichola 24.572 73.679; ud-jagdish 24.579 73.684; ud-saheliyon 24.604 73.690
+ud-sajjangarh 24.594 73.639; ud-bagore 24.580 73.682; ud-fatehsagar 24.600 73.678; ud-shilpgram 24.603 73.656
+ud-hathipol 24.587 73.690; ud-ambrai 24.579 73.680; ud-eklingji 24.746 73.721
+"""
+COORDS = {pid: (float(lat), float(lon)) for pid, lat, lon in
+          (item.split() for line in _COORDS.strip().splitlines() for item in line.split(";"))}
+
+
+def coordinates(place_id: str) -> dict:
+    """{'lat': .., 'lon': ..} for a curated landmark, else {}."""
+    pos = COORDS.get(place_id)
+    return {"lat": pos[0], "lon": pos[1]} if pos else {}
+
+
 # Generic indoor fallback used when rain removes every compatible outdoor option.
 GENERIC_INDOOR = {
     "id": "generic-indoor", "name": "Indoor downtime: cafe, spa or local museum", "tags": ["relaxation"],

@@ -307,9 +307,65 @@ def compute_start_date(month: int | None, day: int | None, today: date) -> tuple
     return cand, False
 
 
-def parse_request(text: str, today: date) -> dict:
-    """Return {constraints, missing, invalid, assumptions}."""
+_MODE_WORDS = {
+    "flight": r"\b(flights?|fly|flying|flown|air ?plane|by air|air travel)\b",
+    "train": r"\b(trains?|rail|railway|by rail)\b",
+    "bus": r"\b(buses|bus|volvo|coach)\b",
+    "car": r"\b(car|cab|taxi|drive|driving|road ?trip|self[- ]drive)\b",
+    "bike": r"\b(bikes?|motorbikes?|motorcycles?|scooter|bullet|biking|riding)\b",
+}
+# Words that look like a travel mode but are not a choice of how to get there.
+_NOT_A_MODE = (r"\b(?:horse|horseback|camel|elephant|jeep)[- ]?(?:riding|ride)s?\b|"
+               r"\b(?:quad|mountain|dirt)[- ]?(?:bikes?|biking)\b|"
+               r"(?<!by )\bflights?\s*(?:and|&|\+)\s*hotels?\b|\bhotels?\s*(?:and|&|\+)\s*flights?\b")
+_MODE_AUTO = r"\b(any (travel )?mode|any way|whichever|you (choose|decide|pick)|cheapest (way|mode))\b"
+
+
+def parse_travel_mode(text: str) -> str | None:
+    """How the person says they will travel: flight | train | bus | car | bike | auto, or None when not said
+    (or when several different modes are mentioned, which is ambiguous)."""
+    low = text.lower()
+    if "| travel:" in low:                       # the page appends the person's choice after this marker
+        low = low.rsplit("| travel:", 1)[1]
+    low = re.sub(_NOT_A_MODE, " ", low)
+    found = [m for m, pat in _MODE_WORDS.items() if re.search(pat, low)]
+    if len(found) == 1:
+        return found[0]
+    if not found and re.search(_MODE_AUTO, low):
+        return "auto"
+    return None
+
+
+_DEST_MARKER = re.compile(r"\|\s*destination:\s*([^|]{1,60})", re.I)
+
+
+def split_destination_choice(text: str) -> tuple[str, str | None]:
+    """The page appends ' | destination: X' when the traveller picks a suggested place; it wins over whatever
+    the original sentence said. Returns (text without the marker, chosen place or None)."""
+    found = _DEST_MARKER.findall(text)
+    if not found:
+        return text, None
+    return _DEST_MARKER.sub(" ", text).strip(), found[-1].strip() or None
+
+
+def parse_scope(text: str) -> str:
+    """Where suggestions may be: 'abroad', 'india' or 'any'."""
+    low = text.lower()
+    if re.search(r"\b(abroad|overseas|international|outside india|foreign)\b", low):
+        return "abroad"
+    if re.search(r"\b(in india|within india|inside india|domestic)\b", low):
+        return "india"
+    return "any"
+
+
+def parse_request(text: str, today: date, group_size: int = 0) -> dict:
+    """Return {constraints, missing, invalid, assumptions}. ``group_size``: how many people filled in the
+    group-preferences form (0 when it was not used)."""
+    text, chosen = split_destination_choice(text)
     origin, dest, texts = parse_places(text)
+    if chosen:
+        dest = None
+        texts["destination"] = chosen
     days = parse_days(text)
     month, day = parse_month(text)
     budget, per_person = parse_budget(text)
@@ -319,6 +375,11 @@ def parse_request(text: str, today: date) -> dict:
                                   r"\blaid[- ]back\b|\bunhurried\b|\bfewer activities\b", text.lower()) else "normal"
     assumptions: list[str] = []
     invalid: dict[str, str] = {}
+    if group_size and (travelers is None or assumed_t):
+        travelers, assumed_t = group_size, False
+    elif group_size and travelers < group_size:
+        assumptions.append(f"You listed {group_size} people in the group, so I planned for {group_size} travelers.")
+        travelers = group_size
     if travelers is None:
         travelers = 1
         assumptions.append("No traveler count given: assumed 1 traveler.")
@@ -338,6 +399,7 @@ def parse_request(text: str, today: date) -> dict:
         "origin": origin, "destination": dest, "days": days, "month": month,
         "start_date": start.isoformat(), "budget": budget, "travelers": travelers,
         "preferences": prefs, "pace": pace, "today": today.isoformat(),
+        "travel_mode": parse_travel_mode(text),
     }
     missing = [k for k in ("origin", "destination", "days", "budget")
                if constraints[k] is None and k not in texts]

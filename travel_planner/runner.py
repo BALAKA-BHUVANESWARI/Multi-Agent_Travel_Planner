@@ -68,8 +68,9 @@ class Planner:
         return self._step(state, "present")
 
     # ----------------------------------------------------------- public API
-    def start(self, request: str, thread_id: str | None = None) -> dict:
-        state = initial_state(request, thread_id)
+    def start(self, request: str, thread_id: str | None = None, group: list | None = None,
+              memory: dict | None = None) -> dict:
+        state = initial_state(request, thread_id, group, memory)
         state = self._step(state, "guardrail")
         if routing.after_guardrail(state) == "end":
             return self._save(state)
@@ -86,7 +87,7 @@ class Planner:
             return state                            # already finished: resuming again is a no-op
         if state.get("status") != "awaiting_approval":
             raise ValueError(f"thread is '{state.get('status')}', not awaiting approval")
-        state = apply_update(state, agents.approval_node(state, decision))
+        state = apply_update(state, agents.approval_node(state, decision, self.deps))
         for _ in range(MAX_STEPS):
             nxt = routing.after_approval(state)
             if nxt == "end":
@@ -107,6 +108,9 @@ class Planner:
 
     def get(self, thread_id: str) -> dict | None:
         return self.deps.store.load_state(thread_id)
+
+    def delete(self, thread_id: str) -> None:
+        self.deps.store.delete_trip(thread_id)
 
     # ---------------------------------------------------------- evaluation
     def evaluate(self, constraints: dict, strategy: str, food_boost: bool = False) -> dict:

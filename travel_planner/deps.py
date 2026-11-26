@@ -21,9 +21,12 @@ class Deps:
     today: date = field(default_factory=date.today)
     sleep: Callable[[float], None] = time.sleep
     tracer: Tracer = field(default_factory=Tracer)
+    ask_travel_mode: bool = False       # ask how to travel when the request does not say (the API turns this on)
 
     @classmethod
-    def default(cls, db: str | None = None, tools_mode: str | None = None, today: date | None = None) -> "Deps":
+    def default(cls, db: str | None = None, tools_mode: str | None = None, today: date | None = None,
+                ask_travel_mode: bool | None = None) -> "Deps":
         store = Store(db or config.db_path())
+        ask = config.ask_travel_mode() if ask_travel_mode is None else ask_travel_mode
         return cls(tools=make_client(tools_mode), store=store, llm=LLMRouter(store=store),
-                   today=today or date.today())
+                   today=today or date.today(), ask_travel_mode=ask)

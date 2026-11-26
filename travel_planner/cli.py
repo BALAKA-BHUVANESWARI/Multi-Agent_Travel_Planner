@@ -33,13 +33,17 @@ def run(argv: list[str] | None = None, out=sys.stdout) -> int:
     ap.add_argument("--json", action="store_true", help="print the final state as JSON")
     ap.add_argument("--resume", metavar="THREAD_ID", help="continue a paused plan from the database")
     ap.add_argument("--log", action="store_true", help="print the agent log")
+    ap.add_argument("--ask-mode", action="store_true",
+                    help="ask how to travel (flight/train/bus/car/bike) when the request does not say; "
+                         "otherwise say it in the request, e.g. 'by train'")
     args = ap.parse_args(argv)
 
     config.load_env()
     from .deps import Deps
     from .engine import make_planner
     deps = Deps.default(db=args.db, tools_mode=args.tools,
-                        today=date.fromisoformat(args.today) if args.today else None)
+                        today=date.fromisoformat(args.today) if args.today else None,
+                        ask_travel_mode=args.ask_mode)
     planner = make_planner(args.engine, deps=deps)
 
     def say(msg: str = "") -> None:

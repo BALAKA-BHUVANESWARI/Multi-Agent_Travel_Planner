@@ -24,7 +24,7 @@ EVENING = ("evening", 18 * 60 + 30, 22 * 60 + 30)
 MIN_SLOT_MIN = 45
 
 
-LEAD_FLIGHT, LEAD_GROUND = 180, 60        # minutes at the airport / station before departing
+LEAD_FLIGHT, LEAD_GROUND, LEAD_ROAD = 180, 60, 0   # minutes at the airport / station before departing
 
 
 def _slots_for_day(i: int, n: int, arr: int, dep: int, pace: str,
@@ -33,8 +33,8 @@ def _slots_for_day(i: int, n: int, arr: int, dep: int, pace: str,
         slots = []
         if arr <= 11 * 60:
             slots.append(("afternoon", 15 * 60 + 30, 18 * 60))
-        if arr <= 17 * 60 + 30:
-            slots.append(EVENING)
+        if arr <= 17 * 60 + 30:                                # check-in ends 90 min after arriving: never overlap it
+            slots.append((EVENING[0], max(EVENING[1], arr + 90), EVENING[2]))
         return slots
     if i == n - 1:
         limit = dep - (lead + 30)
@@ -56,8 +56,10 @@ def build_itinerary(constraints: dict, flight_sel: dict | None, hotel_sel: dict 
     travelers = constraints["travelers"]
     start = date.fromisoformat(constraints["start_date"])
     dest = place_name(constraints, "destination")
-    ground = bool(flight_sel) and flight_sel.get("mode") == "ground"
-    lead = LEAD_GROUND if ground else LEAD_FLIGHT
+    tmode = (flight_sel or {}).get("mode")
+    ground = tmode in ("ground", "train", "bus")
+    road = tmode in ("car", "bike")
+    lead = LEAD_ROAD if road else (LEAD_GROUND if ground else LEAD_FLIGHT)
 
     if flight_sel:
         arr = to_minutes(flight_sel["arrive_out"])
@@ -115,7 +117,8 @@ def build_itinerary(constraints: dict, flight_sel: dict | None, hotel_sel: dict 
             placed[i].append(_item(
                 "activity", chosen["name"], w_start, w_start + dur, id=chosen["id"], slot=slot,
                 cost_pp=chosen["cost"], cost_total=chosen["cost"] * travelers, outdoor=chosen["outdoor"],
-                tags=chosen.get("tags", []), desc=chosen.get("desc", ""), note=note))
+                tags=chosen.get("tags", []), desc=chosen.get("desc", ""), note=note,
+                **({"lat": chosen["lat"], "lon": chosen["lon"]} if "lat" in chosen and "lon" in chosen else {})))
 
     days = []
     for i in range(n):
@@ -128,7 +131,8 @@ def build_itinerary(constraints: dict, flight_sel: dict | None, hotel_sel: dict 
                                max(15 * 60, arr + 60), max(15 * 60, arr + 60) + 30))
         if i == n - 1:
             items.append(_item("hotel", "Check out", 9 * 60, 9 * 60 + 30))
-            home = ("Travel to the station or bus stand and head home" if ground
+            home = (f"Check out and {'drive' if tmode == 'car' else 'ride'} home" if road else
+                    "Travel to the station or bus stand and head home" if ground
                     else "Airport transfer and flight home")
             items.append(_item("transport", home, dep - lead, dep, leg="departure"))
         items.sort(key=lambda x: (x["start_min"], x["end_min"]))

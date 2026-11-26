@@ -9,15 +9,17 @@ from __future__ import annotations
 import hashlib
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
-from . import checks, config, guardrails, guide, intake as intake_mod
-from .feedback import parse_feedback
+from . import checks, config, group as group_mod, guardrails, guide, intake as intake_mod
+from .feedback import matches_excluded, parse_feedback
 from .itinerary import build_itinerary
-from .state import entry
+from .state import RESET, entry
+from .toolkit import footprint
 from .tools import geo as geo_mod
 from .tools.catalog import place_name
 from .tools.client import call_with_retry
+from .tools import transport
 from .tools.errors import ToolError
 from .utils import clip, fmt_inr, next_strategy
 
@@ -51,6 +53,8 @@ _INTAKE_SCHEMA = {
 
 
 _PLACE_TEXT = re.compile(r"^[A-Za-z\u00c0-\u024f][A-Za-z\u00c0-\u024f .'\u2019-]{1,59}$")
+_WANTS_IDEAS = re.compile(r"\b(suggest|recommend|somewhere|anywhere|any place|where (?:should|can|could|do) "
+                          r"(?:i|we))\b", re.I)
 
 
 def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
@@ -68,6 +72,9 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
     alts = parsed.setdefault("alts", {})
     for role in ("origin", "destination"):
         v = obj.get(role)
+        if role == "destination" and isinstance(v, str) and _WANTS_IDEAS.search(text) \
+                and v.strip().lower() not in text.lower():
+            continue                        # asked for ideas and never named it: offer suggestions instead
         if c[role] is None and isinstance(v, str) and _PLACE_TEXT.match(v.strip()):
             if role not in texts:
                 texts[role] = v.strip()
@@ -119,7 +126,7 @@ def _resolve_places(parsed: dict, deps, logs: list) -> None:
                 break
             except geo_mod.PlaceError:
                 continue                                 # not a known place: may need the live lookup
-    if parsed["missing"] or any(k not in ("origin", "destination") for k in parsed["invalid"]):
+    if set(parsed["missing"]) - {"destination"} or any(k not in ("origin", "destination") for k in parsed["invalid"]):
         return
     for role in ("origin", "destination"):
         if c[role] is not None:
@@ -141,13 +148,166 @@ def _resolve_places(parsed: dict, deps, logs: list) -> None:
                 parsed["invalid"][role] = error
 
 
+MODE_LABEL = {"flight": "Flight", "train": "Train", "bus": "Bus", "car": "Car", "bike": "Bike"}
+ROAD_NOTE = ("Road and rail times and prices are estimated from the straight-line distance: check that a direct "
+             "route exists and book real tickets before you go.")
+
+
+def _travel_heading(sel: dict | None) -> str:
+    mode = (sel or {}).get("mode")
+    return {"ground": "Train/bus", "train": "Train", "bus": "Bus", "car": "Car", "bike": "Bike"}.get(mode, "Flight")
+
+
+def _day(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{d.day} {d:%b}"
+
+
+def _journey(c: dict, option: dict, today: date) -> dict | None:
+    """When an overland journey really starts and ends, with a warning when it is long or can no longer be made."""
+    if option.get("mode") not in ("train", "bus", "car", "bike"):
+        return None
+    start = date.fromisoformat(c["start_date"])
+    before, after = option.get("leave_days_before", 0), option.get("return_days_after", 0)
+    leave, home = start - timedelta(days=before), start + timedelta(days=c["days"] - 1 + after)
+    notes = [transport.long_journey_warning(option["mode"], option["duration_h"], before + after, c["days"])]
+    if leave < today:
+        notes.append(f"You would have had to leave on {_day(leave.isoformat())}, which has passed: "
+                     "choose a later start date.")
+    return {"leave_date": leave.isoformat(), "home_date": home.isoformat(), "extra_days": before + after,
+            "warning": " ".join(n for n in notes if n)}
+
+
+def _travel_options(c: dict, deps, usual: str | None = None) -> list[dict]:
+    """What each way of travelling would cost and take for this trip (the 'best' option of each mode)."""
+    start = date.fromisoformat(c["start_date"])
+    out = []
+    for mode in ("flight", "train", "bus", "car", "bike"):
+        try:
+            res = call_with_retry(deps.tools, "search_flights", retries=1, sleep=deps.sleep, origin=c["origin"],
+                                  destination=c["destination"], depart_date=start.isoformat(),
+                                  return_date=(start + timedelta(days=c["days"] - 1)).isoformat(),
+                                  travelers=c["travelers"], origin_geo=c.get("origin_geo"),
+                                  destination_geo=c.get("destination_geo"), mode=mode, live_prices=False)
+            best = next((o for o in res["options"] if o["id"] == "best"), res["options"][0])
+            cheapest = min(o["price_pp"] for o in res["options"])
+            out.append({"mode": mode, "label": MODE_LABEL[mode], "available": True, "price_pp": best["price_pp"],
+                        "cheapest_pp": cheapest, "duration_h": best["duration_h"], "detail": best["label"],
+                        "note": best.get("note", ""), "estimated": True, "usual": mode == usual,
+                        "co2_kg_pp": (footprint.for_trip(c, mode) or {}).get("kg_pp"),
+                        **(_journey(c, best, deps.today) or {})})
+        except (ToolError, KeyError, ValueError) as e:
+            out.append({"mode": mode, "label": MODE_LABEL[mode], "available": False, "reason": str(e),
+                        "estimated": True})
+    known = [o["co2_kg_pp"] for o in out if o.get("co2_kg_pp") is not None]
+    for o in out:
+        o["greenest"] = len(known) > 1 and o.get("co2_kg_pp") == min(known)
+    return out
+
+
+def _options_message(c: dict, options: list[dict]) -> str:
+    lines = [f"How would you like to travel from {place_name(c, 'origin')} to {place_name(c, 'destination')}? "
+             "Reply with one of these (add it to your request, e.g. 'by train'):"]
+    for o in options:
+        if o["available"]:
+            line = (f"- {o['label']}: about {fmt_inr(o['price_pp'])} per person round trip, "
+                    f"{o['duration_h']:g} h each way (estimated)")
+            if o.get("co2_kg_pp") is not None:
+                line += f"; about {o['co2_kg_pp']:g} kg CO2e per person" + (" (lowest)" if o["greenest"] else "")
+            if o.get("extra_days"):
+                line += f"; leave {_day(o['leave_date'])}, home {_day(o['home_date'])}"
+            if o.get("warning"):
+                line += f". {o['warning']}"
+            lines.append(line + (" [your usual]" if o.get("usual") else ""))
+        else:
+            lines.append(f"- {o['label']}: not available ({o['reason']})")
+    lines.append("Or say 'any mode' and I will pick the best value.")
+    return "\n".join(lines)
+
+
+def _apply_group(parsed: dict, group: list) -> None:
+    c = parsed["constraints"]
+    if group:
+        c["preferences"] = list(dict.fromkeys(c["preferences"] + group_mod.shared_preferences(group)))
+
+
+def _apply_memory(parsed: dict, memory: dict, text: str, group: list, ask_mode: bool = False) -> list[str]:
+    """Fill ONLY what the request does not say from a signed-in traveller's saved defaults, and say so."""
+    if not memory:
+        return []
+    c, texts, used = parsed["constraints"], parsed.setdefault("texts", {}), []
+    home = memory.get("home_city")
+    if home and c["origin"] is None and "origin" not in texts:
+        texts["origin"] = home
+        parsed["missing"] = [k for k in parsed["missing"] if k != "origin"]
+        used.append(f"starting from {home}")
+    if memory.get("preferences") and not c["preferences"] and not group:
+        c["preferences"] = [p for p in memory["preferences"] if p in intake_mod.PREF_WORDS]
+        if c["preferences"]:
+            used.append("interests: " + ", ".join(c["preferences"]))
+    # when the planner asks how to travel, the saved mode is only highlighted among the choices
+    if memory.get("travel_mode") and c.get("travel_mode") is None and not ask_mode:
+        c["travel_mode"] = memory["travel_mode"]
+        used.append(f"travel by {memory['travel_mode']}")
+    if memory.get("pace") == "relaxed" and c.get("pace") == "normal" and not re.search(
+            r"\b(pace|busy|packed|fuller)\b", text, re.I):
+        c["pace"] = "relaxed"
+        used.append("relaxed pace")
+    if not used:
+        return []
+    return ["From your saved profile: " + "; ".join(used) + ". Say otherwise in your request to override."]
+
+
+def _suggestions(c: dict, text: str, deps) -> list[dict]:
+    """Destinations to offer when the request names none. Never raises: no suggestions just means we ask."""
+    try:
+        res = call_with_retry(deps.tools, "recommend_destinations", retries=1, sleep=deps.sleep,
+                              origin=c["origin"], start_date=c["start_date"], days=c["days"],
+                              travelers=c["travelers"], budget=c["budget"], preferences=c["preferences"],
+                              origin_geo=c.get("origin_geo"), scope=intake_mod.parse_scope(text),
+                              mode=c.get("travel_mode"))
+        return res["suggestions"]
+    except (ToolError, KeyError, ValueError):
+        return []
+
+
+def _suggestion_message(c: dict, items: list[dict], any_fit: bool) -> str:
+    lines = [f"You didn't name a destination, so here are some that suit a {c['days']}-day trip from "
+             f"{place_name(c, 'origin')} (all prices estimated, for {c['travelers']} traveler(s)):"]
+    if not any_fit:
+        lines.append(f"None of my suggestions fits {fmt_inr(c['budget'])}; these are the closest.")
+    for s in items:
+        season = "good season" if s["in_season"] else "off season"
+        lines.append(f"- {s['name']}, {s['country']}: from about {fmt_inr(s['estimate_from'])} ({season}; "
+                     f"{', '.join(s['tags'][:3])})")
+    lines.append("Add one to your request (e.g. 'to Goa'), or name any other city or town.")
+    return "\n".join(lines)
+
+
+def _trip_warnings(c: dict) -> list[str]:
+    """Warnings that follow from where and how the trip goes (used at intake and after such a change)."""
+    out = []
+    if c.get("travel_mode") in ("train", "bus", "car", "bike"):
+        out.append(ROAD_NOTE)
+    og, dg = c.get("origin_geo") or {}, c.get("destination_geo") or {}
+    if og.get("cc") and dg.get("cc") and og["cc"] != dg["cc"]:
+        out.append(f"International trip ({og['country']} to {dg['country']}): passport, visa or entry rules, "
+                   "travel insurance and currency-exchange costs are not included in this estimate.")
+    return out
+
+
 def intake_node(state: dict, deps) -> dict:
-    parsed = intake_mod.parse_request(state["request"], deps.today)
+    group = state.get("group") or []
+    parsed = intake_mod.parse_request(state["request"], deps.today, len(group))
+    _apply_group(parsed, group)
     logs = []
     if parsed["missing"] or parsed["invalid"]:
         filled = _llm_fill_gaps(parsed, state["request"], deps)
         if filled:
             logs.append(entry("intake", f"LLM filled: {', '.join(filled)}"))
+    memory = state.get("memory") or {}
+    remembered = _apply_memory(parsed, memory, state["request"], group, getattr(deps, "ask_travel_mode", False))
+    parsed["assumptions"] = parsed["assumptions"] + remembered
     _resolve_places(parsed, deps, logs)
     c = parsed["constraints"]
     for role in ("origin", "destination"):                 # a place that is still unresolved is "missing"
@@ -157,16 +317,40 @@ def intake_node(state: dict, deps) -> dict:
         parsed["invalid"]["days"] = f"I can plan trips of {config.MIN_DAYS} to {config.MAX_DAYS} days."
     if parsed["missing"] or parsed["invalid"]:
         msg = intake_mod.build_question(parsed["missing"], parsed["invalid"])
+        if parsed["missing"] == ["destination"] and not parsed["invalid"] and c.get("origin_geo"):
+            items = _suggestions(c, state["request"], deps)
+            if items:
+                return {"constraints": c, "status": "needs_info", "suggestions": items,
+                        "message": _suggestion_message(c, items, any(s["fits_budget"] for s in items)),
+                        "log": logs + [entry("intake", "no destination: suggested "
+                                             + ", ".join(s["name"] for s in items))]}
         return {"constraints": c, "status": "needs_info", "message": msg,
                 "log": logs + [entry("intake", f"needs info: {parsed['missing'] or list(parsed['invalid'])}")]}
     og, dg = c["origin_geo"], c["destination_geo"]
     if c["origin"] == c["destination"] or geo_mod.distance_km(og, dg) < 15:
         return {"constraints": c, "status": "needs_info", "message": "Origin and destination are the same place.",
                 "log": logs + [entry("intake", "origin == destination")]}
+    if c.get("travel_mode") is None and getattr(deps, "ask_travel_mode", False):
+        options = _travel_options(c, deps, memory.get("travel_mode"))
+        return {"constraints": c, "status": "needs_info", "message": _options_message(c, options),
+                "travel_options": options,
+                "log": logs + [entry("intake", "asked how to travel: " + ", ".join(
+                    o["mode"] for o in options if o["available"]))]}
     warnings = list(parsed["assumptions"])
-    if og["cc"] and dg["cc"] and og["cc"] != dg["cc"]:
-        warnings.append(f"International trip ({og['country']} to {dg['country']}): passport, visa or entry rules, "
-                        "travel insurance and currency-exchange costs are not included in this estimate.")
+    if c.get("travel_mode") in ("train", "bus", "car", "bike"):
+        start = date.fromisoformat(c["start_date"])
+        try:                                                    # is the chosen mode possible for this distance?
+            call_with_retry(deps.tools, "search_flights", retries=1, sleep=deps.sleep, origin=c["origin"],
+                            destination=c["destination"], depart_date=start.isoformat(),
+                            return_date=(start + timedelta(days=c["days"] - 1)).isoformat(),
+                            travelers=c["travelers"], origin_geo=c.get("origin_geo"),
+                            destination_geo=c.get("destination_geo"), mode=c["travel_mode"])
+        except ToolError as e:
+            options = _travel_options(c, deps)
+            return {"constraints": {**c, "travel_mode": None}, "status": "needs_info", "travel_options": options,
+                    "message": f"{e} " + _options_message(c, options),
+                    "log": logs + [entry("intake", f"{c['travel_mode']} not possible: {e}")]}
+    warnings += _trip_warnings(c)
     return {"constraints": c, "status": "running", "message": "", "warnings": warnings,
             "log": logs + [entry("intake", f"parsed: {c['days']}d {og['name']}->{dg['name']} "
                                            f"budget {fmt_inr(c['budget'])} x{c['travelers']}")]}
@@ -183,7 +367,7 @@ def supervisor_node(state: dict, deps) -> dict:
         msg = f"first pass: strategy={strategy}, workers={WORKERS}"
     else:
         upd.update(flight=None, hotel=None, activities=None, itinerary=None, budget_report=None,
-                   critic_issues=[])
+                   critic_issues=[], group_report=[], alternatives={})
         if reason == "over_budget":
             strategy = next_strategy(strategy)
             upd.update(strategy=strategy, retries=retries + 1, fanout=["flight", "hotel", "activities"])
@@ -210,6 +394,19 @@ def _fail(agent: str, key: str, e: Exception, what: str) -> dict:
             "log": [entry(agent, f"FAILED: {e}")]}
 
 
+def _price_tag(block: dict | None) -> str:
+    """'live: Google Flights via Tavily, fetched 25 Nov 10:45 UTC' for a live result, else 'estimated'."""
+    block = block or {}
+    if block.get("estimated", True):
+        return "estimated"
+    when = ""
+    try:
+        when = ", fetched " + datetime.fromisoformat(block["fetched_at"]).strftime("%d %b %H:%M UTC")
+    except (KeyError, TypeError, ValueError):
+        pass
+    return f"live: {block.get('source', 'web')}{when}"
+
+
 def pick_flight(options: list[dict], strategy: str) -> dict:
     want = FLIGHT_BY_STRATEGY[strategy]
     return next((o for o in options if o["id"] == want), min(options, key=lambda o: o["price_pp"]))
@@ -230,14 +427,27 @@ def flight_node(state: dict, deps) -> dict:
                               destination=c["destination"], depart_date=start.isoformat(),
                               return_date=(start + timedelta(days=c["days"] - 1)).isoformat(),
                               travelers=c["travelers"], origin_geo=c.get("origin_geo"),
-                              destination_geo=c.get("destination_geo"))
+                              destination_geo=c.get("destination_geo"),
+                              mode=(c.get("travel_mode") if c.get("travel_mode") not in (None, "auto") else None))
         sel = dict(pick_flight(res["options"], state["strategy"]))
         sel["total"] = sel["price_pp"] * c["travelers"]
     except (ToolError, KeyError, ValueError) as e:
-        return _fail("flight", "flight", e, "Flight search")
-    return {"flight": {"selected": sel, "options": res["options"], "estimated": True,
-                       "strategy": state["strategy"], "source": res.get("source")},
-            "log": [entry("flight", f"picked '{sel['id']}' {fmt_inr(sel['price_pp'])} pp (estimated)")]}
+        return _fail("flight", "flight", e, MODE_LABEL.get(c.get("travel_mode"), "Travel") + " search")
+    live = res.get("estimated") is False
+    out = {"flight": {"selected": sel, "options": res["options"], "estimated": not live, "live": live,
+                      "strategy": state["strategy"], "source": res.get("source"),
+                      "fetched_at": res.get("fetched_at"), "price_basis": res.get("price_basis")},
+           "log": [entry("flight", f"picked '{sel['id']}' {fmt_inr(sel['price_pp'])} pp "
+                                   f"({_price_tag(res) if live else 'estimated'})")]}
+    journey = _journey(c, sel, deps.today)
+    if journey:
+        out["flight"]["journey"] = journey                 # always describes the option that is selected now
+    emissions = footprint.for_trip(c, sel.get("mode"))
+    if emissions:
+        out["flight"]["footprint"] = emissions
+    if res.get("live_note"):
+        out["warnings"] = [res["live_note"]]
+    return out
 
 
 def hotel_node(state: dict, deps) -> dict:
@@ -254,10 +464,15 @@ def hotel_node(state: dict, deps) -> dict:
         sel["total"] = sel["price_night_per_room"] * nights * res["rooms"]
     except (ToolError, KeyError, ValueError) as e:
         return _fail("hotel", "hotel", e, "Hotel search")
-    return {"hotel": {"selected": sel, "options": res["options"], "estimated": True,
-                      "strategy": state["strategy"], "source": res.get("source")},
-            "log": [entry("hotel", f"picked '{sel['id']}' {fmt_inr(sel['price_night_per_room'])}/room/night x "
-                                   f"{nights}n x {res['rooms']} room(s) (estimated)")]}
+    live = res.get("estimated") is False
+    out = {"hotel": {"selected": sel, "options": res["options"], "estimated": not live, "live": live,
+                     "strategy": state["strategy"], "source": res.get("source"), "fetched_at": res.get("fetched_at"),
+                     "price_basis": res.get("price_basis"), "fx_note": res.get("fx_note", "")},
+           "log": [entry("hotel", f"picked '{sel['id']}' {fmt_inr(sel['price_night_per_room'])}/room/night x "
+                                  f"{nights}n x {res['rooms']} room(s) ({_price_tag(res) if live else 'estimated'})")]}
+    if res.get("live_note"):
+        out["warnings"] = [res["live_note"]]
+    return out
 
 
 def weather_node(state: dict, deps) -> dict:
@@ -278,6 +493,14 @@ def weather_node(state: dict, deps) -> dict:
     return {"weather": res, "log": [entry("weather", f"{res['source']}: {rainy}/{c['days']} rainy days")]}
 
 
+def _position(p: dict) -> dict:
+    lat, lon = p.get("lat"), p.get("lon")
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lat, lon)) \
+            and -90 <= lat <= 90 and -180 <= lon <= 180:
+        return {"lat": float(lat), "lon": float(lon)}
+    return {}
+
+
 def _clean_candidate(p: dict) -> dict | None:
     try:
         cost, hours = int(p["cost"]), float(p["hours"])
@@ -288,6 +511,7 @@ def _clean_candidate(p: dict) -> dict | None:
                 "cost": cost, "hours": hours, "slot": p["slot"],
                 "desc": guardrails.sanitize_untrusted(p.get("desc", ""), 160),
                 **({"far": True} if p.get("far") is True else {}),
+                **_position(p),
                 **({"kind": str(p["kind"])[:20]} if isinstance(p.get("kind"), str) else {}),
                 **({"fame": float(p["fame"])} if isinstance(p.get("fame"), (int, float)) else {})}
     except (KeyError, TypeError, ValueError):
@@ -409,8 +633,12 @@ def activities_node(state: dict, deps) -> dict:
         out = _fail("activities", "activities", e, "Places lookup")
         out["activities"] = {"error": str(e), "candidates": [], "tips": [], "nearby": []}
         return out
+    excluded = state.get("excluded") or []
+    if excluded:                                                 # "skip water sports" is a hard rule
+        cands = [x for x in cands if not any(matches_excluded(x, t) for t in excluded)]
     ranked = rank_candidates(cands, c["preferences"], state["strategy"], state.get("food_boost", False))
     ranked, used_llm = _llm_rerank(ranked, c, deps)
+    ranked = group_mod.fair_order(ranked, state.get("group") or [])
     tips = [{"text": clip(guardrails.sanitize_untrusted(t["text"], 600), 300), "source": t.get("source", "")}
             for t in res.get("tips", [])]
     nearby = [{"name": guardrails.sanitize_untrusted(n["name"], 80), "kind": n.get("kind", "")}
@@ -439,7 +667,13 @@ def merge_node(state: dict, deps) -> dict:
     itin, warns = build_itinerary(c, flight, hotel, state.get("weather"), cands)
     nact = sum(1 for d in itin["days"] for it in d["items"] if it["type"] == "activity")
     log = [entry("merge", f"{len(itin['days'])} days, {nact} activities, {len(itin['swaps'])} rain swaps")]
-    return {"itinerary": itin, "warnings": warns, "log": log}
+    group = state.get("group") or []
+    report = group_mod.satisfaction(group, itin) if group else []
+    for m in report:
+        if m["likes"] and not m["matched"]:
+            warns.append(f"Group: nothing planned matches what {m['name']} likes ({', '.join(m['likes'])}). "
+                         "No suitable place fitted the dates and budget tier.")
+    return {"itinerary": itin, "group_report": report, "warnings": warns, "log": log}
 
 
 # ------------------------------------------------------------------ budget
@@ -460,7 +694,9 @@ def budget_node(state: dict, deps) -> dict:
     incomplete = [k for k, v in (("flight", fl), ("hotel", ho)) if v is None]
     report = {"currency": "INR", "lines": lines, "total": total, "budget": c["budget"], "over_budget": over,
               "remaining": c["budget"] - total, "per_person": round(total / c["travelers"]),
-              "strategy": strategy, "estimated": True, "incomplete": incomplete}
+              "strategy": strategy, "estimated": True, "incomplete": incomplete,
+              "live": [k for k, blk in (("flight", state.get("flight")), ("hotel", state.get("hotel")))
+                       if (blk or {}).get("live") and (blk or {}).get("selected")]}
     replan = "over_budget" if over and state.get("retries", 0) < config.MAX_AUTO_REPLANS else None
     msg = f"total {fmt_inr(total)} vs budget {fmt_inr(c['budget'])} ({'OVER' if over else 'ok'})"
     return {"budget_report": report, "replan_reason": replan, "log": [entry("budget", msg)]}
@@ -490,6 +726,23 @@ def critic_node(state: dict, deps) -> dict:
             "log": [entry("critic", f"{len(blocking)} blocking, {len(issues) - len(blocking)} warning issue(s)")]}
 
 
+# ------------------------------------------------------------ alternatives
+def _alternatives(state: dict, deps) -> dict:
+    """Other destinations for the same dates, group and budget, with the current one priced the same way."""
+    c = state.get("constraints") or {}
+    if not c.get("destination") or not c.get("budget"):
+        return {}
+    try:
+        res = call_with_retry(deps.tools, "recommend_destinations", retries=1, sleep=deps.sleep,
+                              origin=c["origin"], start_date=c["start_date"], days=c["days"],
+                              travelers=c["travelers"], budget=c["budget"], preferences=c.get("preferences") or [],
+                              exclude=c["destination"], origin_geo=c.get("origin_geo"),
+                              exclude_geo=c.get("destination_geo"), limit=3)
+        return {"items": res["suggestions"], "baseline": res.get("baseline"), "estimated": True}
+    except (ToolError, KeyError, ValueError):
+        return {}
+
+
 # ----------------------------------------------------- present / approval
 def present_node(state: dict, deps) -> dict:
     br = state.get("budget_report") or {}
@@ -498,15 +751,132 @@ def present_node(state: dict, deps) -> dict:
            f"Approve to book (mock), or request changes ({max(left, 0)} revision(s) left).")
     if state.get("notice"):
         msg = f"{state['notice']} {msg}"
+    alternatives = _alternatives(state, deps)
     return {"status": "awaiting_approval", "approved": False, "message": msg, "notice": "",
+            "alternatives": alternatives,
             "pending_approval": {"can_revise": left > 0, "revisions_left": max(left, 0),
                                  "auto_replans_used": state.get("retries", 0)},
-            "summary": render_summary(state),
+            "summary": render_summary({**state, "alternatives": alternatives}),
             "log": [entry("present", "awaiting human approval")]}
 
 
-def approval_node(state: dict, decision: dict) -> dict:
-    """Apply the human's decision. Pure function of (state, decision)."""
+def _find_place(name: str, deps) -> tuple[dict | None, str]:
+    try:
+        return geo_mod.resolve(name, live=False), ""
+    except geo_mod.PlaceError as e:
+        reason = str(e)
+    if deps is None:
+        return None, reason
+    try:
+        return call_with_retry(deps.tools, "resolve_place", sleep=deps.sleep, query=name)["geo"], ""
+    except (ToolError, KeyError) as e:
+        return None, str(e)
+
+
+def _mode_problem(c: dict, deps) -> str:
+    """'' when the chosen overland mode can cover this route, otherwise why not."""
+    if deps is None or c.get("travel_mode") not in ("train", "bus", "car", "bike"):
+        return ""
+    start = date.fromisoformat(c["start_date"])
+    try:
+        call_with_retry(deps.tools, "search_flights", retries=1, sleep=deps.sleep, origin=c["origin"],
+                        destination=c["destination"], depart_date=start.isoformat(),
+                        return_date=(start + timedelta(days=c["days"] - 1)).isoformat(),
+                        travelers=c["travelers"], origin_geo=c.get("origin_geo"),
+                        destination_geo=c.get("destination_geo"), mode=c["travel_mode"], live_prices=False)
+    except ToolError as e:
+        return str(e)
+    return ""
+
+
+def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict, dict, list[str]]:
+    """Check each requested change and apply the possible ones.
+    Returns (state update, applied changes, plain-language notes)."""
+    c = dict(state["constraints"])
+    ch = dict(ch)
+    notes = list(notes)
+
+    def reject(key: str, word: str, why: str) -> None:
+        ch.pop(key, None)
+        notes[:] = [n for n in notes if word not in n]
+        notes.append(why)
+
+    if "days" in ch and not config.MIN_DAYS <= ch["days"] <= config.MAX_DAYS:
+        reject("days", " days.", f"I can plan trips of {config.MIN_DAYS} to {config.MAX_DAYS} days.")
+    if "travelers" in ch and not 1 <= ch["travelers"] <= config.MAX_TRAVELERS:
+        reject("travelers", " travelers.", f"I can plan for 1 to {config.MAX_TRAVELERS} travelers.")
+    if "travelers" in ch and state.get("group") and ch["travelers"] < len(state["group"]):
+        reject("travelers", " travelers.", f"Your group list has {len(state['group'])} people. Start a new plan "
+                                           "to change who is in the group.")
+    for key in ("budget", "pace", "days", "travelers"):
+        if key in ch:
+            c[key] = ch[key]
+    if "month_day" in ch:
+        month, day = ch["month_day"]
+        start, _ = intake_mod.compute_start_date(month, day, date.fromisoformat(c["today"]))
+        if start.isoformat() == c["start_date"]:
+            reject("month_day", "travel dates", "The trip already starts on that date.")
+        else:
+            c.update(start_date=start.isoformat(), month=month)
+            notes[:] = [f"Trip now starts {start.isoformat()}." if "travel dates" in n else n for n in notes]
+    if "destination" in ch:
+        geo, why = _find_place(ch["destination"], deps)
+        if geo is None:
+            reject("destination", "destination to", why)
+        elif geo["slug"] == c["destination"]:
+            reject("destination", "destination to", f"The trip already goes to {geo['name']}.")
+        elif geo["slug"] == c["origin"] or (c.get("origin_geo")
+                                            and geo_mod.distance_km(c["origin_geo"], geo) < 15):
+            reject("destination", "destination to", "Origin and destination are the same place.")
+        else:
+            c.update(destination=geo["slug"], destination_geo=geo)
+    if "travel_mode" in ch:
+        c["travel_mode"] = ch["travel_mode"]
+    if "destination" in ch or "travel_mode" in ch:
+        why = _mode_problem(c, deps)
+        if why:
+            old = state["constraints"]
+            if "destination" in ch:
+                c.update(destination=old["destination"], destination_geo=old.get("destination_geo"))
+                reject("destination", "destination to", why + " Add 'go by flight' to change both together.")
+            if "travel_mode" in ch:
+                c["travel_mode"] = old.get("travel_mode")
+                reject("travel_mode", "Travelling by", "" if why in " ".join(notes) else why)
+
+    excluded = list(state.get("excluded") or [])
+    if "exclude" in ch:
+        cands = (state.get("activities") or {}).get("candidates", [])
+        found = []
+        for term in ch["exclude"]:
+            if any(matches_excluded(x, term) for x in cands):
+                found.append(term)
+                notes.append(f"Leaving out: {term}.")
+                c["preferences"] = [p for p in c.get("preferences", []) if p != term]
+            else:
+                notes.append(f"Nothing in this plan matches '{term}'.")
+        excluded = list(dict.fromkeys(excluded + found))
+        if found:
+            ch["exclude"] = found
+        else:
+            ch.pop("exclude")
+    if ch.get("preferences_add"):
+        c["preferences"] = list(dict.fromkeys(list(c["preferences"]) + ch["preferences_add"]))
+    if "travelers" in ch and "budget" not in ch:
+        notes.append(f"The total budget stays {fmt_inr(c['budget'])}.")
+
+    update: dict = {"constraints": c, "excluded": excluded}
+    if {"destination", "days", "month_day"} & set(ch):
+        update["weather"] = None                                   # dates or place moved: fetch weather again
+    if "destination" in ch:
+        update.update(activities=None, excluded=[])
+    if {"destination", "days", "month_day", "travel_mode"} & set(ch):
+        update["warnings"] = [RESET] + _trip_warnings(c)           # old trip warnings no longer apply
+    return update, ch, [n for n in notes if n]
+
+
+def approval_node(state: dict, decision: dict, deps=None) -> dict:
+    """Apply the human's decision. A function of (state, decision); ``deps`` is only used to check that a new
+    destination or travel mode is possible."""
     action = (decision or {}).get("action")
     base = {"decision": decision}
     if action == "approve":
@@ -531,25 +901,20 @@ def approval_node(state: dict, decision: dict) -> dict:
     fb = parse_feedback(text, state["constraints"], state.get("strategy", "normal"))
     if not fb["recognized"]:
         return {**base, "replan_reason": None,
-                "notice": "I couldn't tell what to change. Try: 'make it cheaper', 'budget 80000', "
-                          "'more food', or 'relaxed pace'.",
+                "notice": "I couldn't tell what to change. Try: 'make it cheaper', 'budget 80000', 'make it 4 "
+                          "days', 'add 1 person', 'move it to January', 'go by train', 'change destination to "
+                          "Jaipur', 'skip water sports', 'more food' or 'relaxed pace'.",
                 "log": [entry("approval", "feedback not understood")]}
-    ch = fb["changes"]
-    if not ch:                      # recognised but nothing to do (e.g. already cheapest)
-        return {**base, "replan_reason": None, "notice": " ".join(fb["notes"]),
-                "log": [entry("approval", "no-op feedback: " + " ".join(fb["notes"]))]}
-    c = dict(state["constraints"])
-    if "budget" in ch:
-        c["budget"] = ch["budget"]
-    if "pace" in ch:
-        c["pace"] = ch["pace"]
-    if ch.get("preferences_add"):
-        c["preferences"] = list(dict.fromkeys(list(c["preferences"]) + ch["preferences_add"]))
-    return {**base, "constraints": c, "strategy": ch.get("strategy", state.get("strategy", "normal")),
+    update, ch, notes = _apply_changes(state, fb["changes"], fb["notes"], deps) if fb["changes"] \
+        else ({}, {}, fb["notes"])
+    if not ch:                      # recognised but nothing to do (e.g. already cheapest, or not possible)
+        return {**base, "replan_reason": None, "notice": " ".join(notes),
+                "log": [entry("approval", "no-op feedback: " + " ".join(notes))]}
+    return {**base, **update, "strategy": ch.get("strategy", state.get("strategy", "normal")),
             "food_boost": ch.get("food_boost", state.get("food_boost", False)),
             "revisions": state.get("revisions", 0) + 1, "replan_reason": "feedback", "approved": False,
-            "status": "running", "notice": " ".join(fb["notes"]),
-            "log": [entry("approval", "revise: " + " ".join(fb["notes"]))]}
+            "status": "running", "notice": " ".join(notes),
+            "log": [entry("approval", "revise: " + " ".join(notes))]}
 
 
 # -------------------------------------------------------------------- book
@@ -596,13 +961,25 @@ def render_summary(state: dict) -> str:
     ho = (state.get("hotel") or {}).get("selected")
     L = [f"# {c['days']}-day trip to {name} ({it['start_date']} to {it['end_date']})",
          f"{c['travelers']} traveler(s) from {place_name(c, 'origin')} - strategy: {state.get('strategy', 'normal')}", ""]
-    ground = bool(fl) and fl.get("mode") == "ground"
-    L.append("## Train/bus (estimated)" if ground else "## Flight (estimated)")
+    heading = _travel_heading(fl)
+    L.append(f"## {heading} ({_price_tag(state.get('flight'))})")
     L.append(f"{fl['label']}: out {fl['depart_out']} (arrive {fl['arrive_out']}), back {fl['depart_back']} - "
              f"{fmt_inr(fl['price_pp'])} per person round trip" if fl else "Not available (tool failure).")
-    L.append("\n## Hotel (estimated)")
+    if fl and fl.get("note"):
+        L.append(fl["note"])
+    journey = (state.get("flight") or {}).get("journey") if fl else None
+    if journey and journey["extra_days"]:
+        L.append(f"Leave home on {_day(journey['leave_date'])}; back home on {_day(journey['home_date'])}.")
+    if journey and journey["warning"]:
+        L.append(journey["warning"])
+    emissions = (state.get("flight") or {}).get("footprint") if fl else None
+    if emissions:
+        L.append(f"Travel emissions, there and back: about {emissions['kg_pp']:g} kg CO2e per person (estimate).")
+    L.append(f"\n## Hotel ({_price_tag(state.get('hotel'))})")
     L.append(f"{ho['label']}: {fmt_inr(ho['price_night_per_room'])}/room/night x {ho['nights']} nights x "
              f"{ho['rooms']} room(s)" if ho else "Not available (tool failure).")
+    if ho and (state.get("hotel") or {}).get("fx_note"):
+        L.append(state["hotel"]["fx_note"])
     wsrc = (state.get("weather") or {}).get("source")
     L.append(f"\n## Day by day (weather: {wsrc or 'unavailable'})")
     for d in it["days"]:
@@ -633,16 +1010,36 @@ def render_summary(state: dict) -> str:
                     cu = f" - {r['cuisine']}" if r.get("cuisine") else ""
                     L.append(f"{i}. {r['name']}{cu}: {r['hours']}. Best: {r['best_time']}")
         L.append(f"  - {dn.get('note', '')}")
+    if state.get("group_report"):
+        L.append("\n## Group fit")
+        for m in state["group_report"]:
+            wants = f" (likes {', '.join(m['likes'])})" if m["likes"] else ""
+            L.append(f"- {m['name']}{wants}: {len(m['matched'])} of {m['activities']} activities match"
+                     + (f"; {len(m['conflicts'])} touch something they wanted to avoid" if m["conflicts"] else ""))
     L.append("\n## Budget (estimated)")
     for k, v in br["lines"].items():
         L.append(f"- {k.title()}: {fmt_inr(v)}")
     status = "OVER budget" if br["over_budget"] else "within budget"
     L.append(f"- **Total: {fmt_inr(br['total'])}** of {fmt_inr(br['budget'])} ({status}); "
              f"{fmt_inr(br['per_person'])} per person")
+    alts = (state.get("alternatives") or {}).get("items") or []
+    if alts and br["over_budget"]:
+        L.append("\n## Other places to consider (estimated cheapest totals)")
+        L += [f"- {a['name']}, {a['country']}: from about {fmt_inr(a['estimate_from'])}" for a in alts]
     if state.get("warnings"):
         L.append("\n## Warnings")
         L += [f"- {w}" for w in dict.fromkeys(state["warnings"])]
-    L.append("\n" + ("Train/bus" if ground else "Flight") + " and hotel prices are synthetic ESTIMATES, not live fares.")
+    live_flight, live_hotel = (bool((state.get(k) or {}).get("live") and (state.get(k) or {}).get("selected"))
+                               for k in ("flight", "hotel"))
+    if live_flight and live_hotel:
+        L.append("\nFlight and hotel prices are live listings read from Google Flights and Google Hotels; they can "
+                 "change and are not a booking. Activities and food are estimates.")
+    elif live_flight or live_hotel:
+        L.append(f"\nThe {'flight' if live_flight else 'hotel'} price is a live Google listing and can change; the "
+                 f"{'hotel' if live_flight else heading.lower()} price is a synthetic ESTIMATE, as are activities and "
+                 "food.")
+    else:
+        L.append(f"\n{heading} and hotel prices are synthetic ESTIMATES, not live fares.")
     if state.get("booking"):
         L.append(f"\n## Booking\n{state['booking']['booking_id']}: {state['booking']['status']}")
     return "\n".join(L)

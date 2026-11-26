@@ -1,15 +1,24 @@
 """Shared typed state.
 
 Parallel workers write *separate keys*, so there are no write conflicts.
-Only ``log`` and ``warnings`` use (append) reducers.
+Only ``log`` and ``warnings`` use (append) reducers. A warnings update that starts with ``RESET`` replaces the
+list instead (used when a change request moves the trip somewhere else, so old warnings no longer apply).
 """
 from __future__ import annotations
 
-import operator
 import uuid
 from typing import Annotated, Any, Optional, TypedDict
 
 from .utils import now_iso
+
+
+RESET = "__reset__"
+
+
+def add_or_reset(old: list, new: list) -> list:
+    if new and new[0] == RESET:
+        return list(new[1:])
+    return list(old or []) + list(new or [])
 
 
 class TripState(TypedDict, total=False):
@@ -29,8 +38,8 @@ class TripState(TypedDict, total=False):
     itinerary: Optional[dict]
     budget_report: Optional[dict]
     critic_issues: list
-    warnings: Annotated[list, operator.add]   # append-only
-    log: Annotated[list, operator.add]        # append-only
+    warnings: Annotated[list, add_or_reset]   # append-only (see RESET)
+    log: Annotated[list, add_or_reset]        # append-only
     decision: Optional[dict]
     approved: bool
     booking: Optional[dict]
@@ -40,13 +49,24 @@ class TripState(TypedDict, total=False):
     summary: str
     pending_approval: Optional[dict]
     food_boost: bool
+    travel_options: list        # modes offered when the request does not say how to travel
+    suggestions: list           # destinations offered when the request names none
+    alternatives: dict          # other destinations to compare with the planned one
+    group: list                 # [{name, likes, avoid}] for a group trip
+    group_report: list          # how well the plan serves each group member
+    excluded: list              # things the traveller asked to leave out ("skip water sports")
+    memory: dict                # saved defaults of a signed-in traveller
 
 
 APPEND_KEYS = ("warnings", "log")
 
 
-def initial_state(request: str, thread_id: str | None = None) -> TripState:
+def initial_state(request: str, thread_id: str | None = None, group: list | None = None,
+                  memory: dict | None = None) -> TripState:
     return TripState(
+        group=list(group or []),
+        memory=dict(memory or {}),
+        excluded=[],
         thread_id=thread_id or uuid.uuid4().hex[:12],
         request=request,
         strategy="normal",
@@ -68,7 +88,7 @@ def apply_update(state: dict, update: dict | None) -> dict:
     new = dict(state)
     for k, v in (update or {}).items():
         if k in APPEND_KEYS:
-            new[k] = list(new.get(k, [])) + list(v)
+            new[k] = add_or_reset(new.get(k, []), list(v))
         else:
             new[k] = v
     return new

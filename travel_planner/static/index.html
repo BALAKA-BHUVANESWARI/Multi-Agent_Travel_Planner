@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Multi-Agent Travel Planner</title>
+<!-- Leaflet (BSD-2) draws the map; the integrity hashes stop a changed CDN file from running. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==" crossorigin="" defer></script>
 <style>
   :root {
     --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --muted:#657080; --line:#e3e7ee; --brand:#2b6cb0;
@@ -31,6 +34,7 @@
   .chips button { font-size:13px; padding:4px 10px; border-radius:999px; color:var(--muted); }
   .badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--line);
            color:var(--muted); vertical-align:middle; }
+  .badge.live { border-color:var(--ok); color:var(--ok); font-weight:600; }
   .banner { padding:10px 12px; border-radius:8px; margin:10px 0; border:1px solid var(--line); }
   .banner.warn { border-color:var(--warn); } .banner.bad { border-color:var(--bad); } .banner.ok { border-color:var(--ok); }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -58,12 +62,50 @@
   .vd.v { color:var(--ok); } .vd.n { color:var(--bad); } .vd.u { color:var(--muted); }
   .eat { padding:7px 0; border-top:1px solid var(--line); } .eat:first-of-type { border-top:0; }
   .hidden { display:none; }
+  input, select { font:inherit; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); }
+  .topbar { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+  .member { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,2fr) auto; gap:8px; margin-top:8px; }
+  .member input { width:100%; min-width:0; }
+  .journey-warn { font-size:13px; margin-top:6px; padding:6px 8px; border-left:3px solid #dd6b20; }
+  @media (max-width:640px) { .member { grid-template-columns:1fr; } }
+  .checks label { margin-right:12px; white-space:nowrap; }
+  #map { height:360px; border-radius:8px; margin-top:10px; z-index:0; }
+  .days button[aria-pressed="true"] { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .leaflet-popup-content, .leaflet-tooltip { color:#1b2430; }
+  .trip { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-top:1px solid var(--line); }
+  button.sos { color:var(--bad); border-color:var(--bad); font-weight:600; }
+  .tabs button[aria-pressed="true"] { background:var(--brand); color:#fff; border-color:var(--brand); }
+  a { color:var(--brand); }
+  .calls { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  .call { border:1px solid var(--line); border-radius:8px; padding:8px 12px; min-width:130px; }
+  .call.primary { border-color:var(--bad); border-width:2px; }
+  .call a { display:inline-block; font-size:22px; font-weight:700; text-decoration:none; color:var(--ink); }
+  .place { padding:8px 0; border-top:1px solid var(--line); overflow-wrap:anywhere; }
+  .co2 { display:grid; grid-template-columns:112px minmax(0,1fr) 64px; gap:8px; align-items:center; padding:6px 0; }
+  .co2 .track { background:var(--line); border-radius:6px; height:14px; overflow:hidden; }
+  .co2 .track span { display:block; height:100%; background:var(--brand); }
+  .co2 .track span.low { background:var(--ok); }
+  .tablewrap { overflow-x:auto; }
+  table.money { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; }
+  table.money th, table.money td { text-align:right; padding:6px 4px; border-top:1px solid var(--line); }
+  table.money th:first-child, table.money td:first-child { text-align:left; }
+  .checkline { display:flex; gap:8px; padding:7px 0; border-top:1px solid var(--line); }
+  .checkline input { flex:none; margin-top:4px; }
+  .field { display:inline-flex; flex-direction:column; font-size:13px; color:var(--muted); gap:2px; max-width:100%; }
+  .field input, .field select { max-width:100%; }
+  h4 { margin:16px 0 4px; font-size:15px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>AI Multi-Agent Travel Planner</h1>
+  <div class="topbar">
+    <h1>AI Multi-Agent Travel Planner</h1>
+    <div class="row"><button type="button" class="sos" id="sosBtn">🆘 Emergency help</button><div class="row" id="account"></div></div>
+  </div>
   <p class="sub">Describe a trip to <b>any city or town</b> in plain language. Agents plan travel, hotel, weather and activities in parallel; you approve before anything is (mock) booked.</p>
+
+  <div id="sos"></div>
+  <div id="panel"></div>
 
   <div class="card">
     <textarea id="prompt" maxlength="1000" placeholder="e.g. Plan a 5 day trip to Bangkok from Mumbai in January, budget 1.8 lakh for 2, love food and temples"></textarea>
@@ -72,13 +114,19 @@
       <span id="busy" class="muted hidden">Agents working…</span>
     </div>
     <div class="row chips" id="samples" style="margin-top:10px"></div>
+    <details id="groupBox" style="margin-top:10px">
+      <summary>Planning for a group? Tell me what each person likes</summary>
+      <div id="members"></div>
+      <div class="row" style="margin-top:8px"><button type="button" id="addMember">Add a person</button>
+        <span class="muted" style="font-size:13px">Interests: <span id="interestList"></span></span></div>
+    </details>
   </div>
 
   <div id="msg"></div>
   <div id="plan"></div>
 
   <footer id="foot">
-    Flight/train and hotel prices are synthetic <b>estimates</b>, not live fares. Booking is a <b>mock</b>; nothing is charged.<br>
+    Prices are synthetic <b>estimates</b> unless marked <b>live</b>. Booking is a <b>mock</b>; nothing is charged.<br>
     <span id="attr"></span>
   </footer>
 </main>
@@ -97,7 +145,9 @@ const SAMPLES = [
   "4 days in Rishikesh from Delhi in October, budget 40k for 2, adventure and nature",
   "6 day trip to Bangkok from Mumbai in January, budget 1.8 lakh for 2, food and temples",
   "5 days in Paris from Bengaluru in June, budget 3 lakh for 2, museums and food",
+  "Suggest a 4 day beach trip from Delhi in January, budget 70k for 2",
 ];
+const INTERESTS = ["beach", "nature", "adventure", "history", "culture", "spiritual", "food", "shopping", "nightlife", "relaxation", "family"];
 let thread = null;
 
 SAMPLES.forEach((s) => {
@@ -107,11 +157,188 @@ SAMPLES.forEach((s) => {
   $("samples").appendChild(b);
 });
 
-async function api(path, body) {
-  const r = await fetch(path, body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {});
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} },
+};
+let token = store.get("tp_token"), me = null, authRequired = false;
+
+async function api(path, body, method) {
+  const headers = {};
+  if (token) headers.Authorization = "Bearer " + token;
+  if (body) headers["Content-Type"] = "application/json";
+  const r = await fetch(path, { method: method || (body ? "POST" : "GET"), headers, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  if (!r.ok) {
+    if (r.status === 401 && token && !path.startsWith("/api/auth/")) { setSession("", null); }
+    throw new Error(data.error || (data.detail ? "The request was not valid." : "HTTP " + r.status));
+  }
   return data;
+}
+
+// ---------------------------------------------------------------- account
+function setSession(t, user) { token = t; me = user; store.set("tp_token", t); drawAccount(); }
+function drawAccount() {
+  $("account").innerHTML = me
+    ? `<span class="muted">${esc(me.email)}</span><button id="tripsBtn">My trips</button><button id="prefsBtn">My preferences</button><button id="outBtn">Sign out</button>`
+    : `<span class="muted">${authRequired ? "Sign in to plan" : "Guest"}</span><button id="signBtn">Sign in / register</button>`;
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("signBtn", showSignIn); on("tripsBtn", showTrips); on("prefsBtn", showPrefs);
+  on("outBtn", async () => { try { await api("/api/auth/logout", {}); } catch (e) {} setSession("", null); $("panel").innerHTML = ""; $("plan").innerHTML = ""; $("msg").innerHTML = ""; });
+}
+function openPanel(title, html) {
+  $("panel").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(title)}</b><button id="closePanel">Close</button></div>${html}<div id="panelMsg"></div></div>`;
+  $("closePanel").onclick = () => { $("panel").innerHTML = ""; };
+}
+const panelError = (e) => { const el = $("panelMsg"); if (el) el.innerHTML = banner("bad", e.message); };
+
+function showSignIn() {
+  openPanel("Sign in or create an account", `<p class="muted" style="margin:6px 0">An account keeps your trips and remembers how you like to travel. It is stored only on this server.</p>
+    <div class="row"><input id="email" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password (8+ characters)" autocomplete="current-password">
+    <button class="primary" id="doLogin">Sign in</button><button id="doRegister">Create account</button></div>`);
+  const send = async (path) => {
+    try {
+      const res = await api(path, { email: $("email").value, password: $("pw").value });
+      setSession(res.token, res.user); $("panel").innerHTML = "";
+    } catch (e) { panelError(e); }
+  };
+  $("doLogin").onclick = () => send("/api/auth/login");
+  $("doRegister").onclick = () => send("/api/auth/register");
+}
+
+async function showTrips() {
+  openPanel("My trips", '<div id="tripList" class="muted">Loading…</div>');
+  try {
+    const { trips } = await api("/api/trips");
+    $("tripList").innerHTML = trips.length ? trips.map((t) => `<div class="trip"><span><b>${esc(t.destination || "?")}</b> from ${esc(t.origin || "?")} · ${esc(t.start_date)} · ${esc(String(t.days))} days${t.total_inr ? " · " + inr(t.total_inr) : ""}
+      <span class="badge">${esc(String(t.status || "").replace(/_/g, " "))}</span></span><button data-trip="${esc(t.thread_id)}">Open</button></div>`).join("") : "No trips yet.";
+    document.querySelectorAll("[data-trip]").forEach((b) => b.onclick = async () => {
+      try { render(await api("/api/plan/" + encodeURIComponent(b.dataset.trip))); $("panel").innerHTML = ""; } catch (e) { panelError(e); }
+    });
+  } catch (e) { panelError(e); }
+}
+
+async function showPrefs() {
+  openPanel("My preferences", '<div id="prefForm" class="muted">Loading…</div>');
+  try {
+    const { memory: m } = await api("/api/me");
+    const sel = (v, cur) => `<option value="${v}" ${v === (cur || "") ? "selected" : ""}>${v ? cap(v) : "Not set"}</option>`;
+    $("prefForm").className = "";
+    $("prefForm").innerHTML = `<p class="muted" style="margin:6px 0">Used only for what a request does not say. Your budget is never remembered.</p>
+      <div class="row"><label>Home city <input id="mHome" value="${esc(m.home_city || "")}"></label>
+      <label>Usual way to travel <select id="mMode">${["", "flight", "train", "bus", "car", "bike"].map((v) => sel(v, m.travel_mode)).join("")}</select></label>
+      <label>Pace <select id="mPace">${["", "normal", "relaxed"].map((v) => sel(v, m.pace)).join("")}</select></label></div>
+      <div class="checks" style="margin-top:8px">${INTERESTS.map((i) => `<label><input type="checkbox" class="mPref" value="${i}" ${(m.preferences || []).includes(i) ? "checked" : ""}> ${i}</label>`).join(" ")}</div>
+      <label style="display:block;margin:8px 0"><input type="checkbox" id="mRemember" ${m.remember !== false ? "checked" : ""}> Use these, and learn from trips I book</label>
+      <div class="row"><button class="primary" id="mSave">Save</button><button id="mForget">Forget everything</button><button class="danger" id="mDelete">Delete my account</button></div>`;
+    $("mSave").onclick = async () => {
+      try {
+        await api("/api/me/memory", { home_city: $("mHome").value, travel_mode: $("mMode").value, pace: $("mPace").value,
+          preferences: [...document.querySelectorAll(".mPref:checked")].map((x) => x.value), remember: $("mRemember").checked }, "PUT");
+        $("panelMsg").innerHTML = banner("ok", "Saved.");
+      } catch (e) { panelError(e); }
+    };
+    $("mForget").onclick = async () => { try { await api("/api/me/memory", null, "DELETE"); await showPrefs(); } catch (e) { panelError(e); } };
+    $("mDelete").onclick = () => {
+      $("panelMsg").innerHTML = banner("bad", "This permanently deletes your account, saved preferences and trip list.") + '<button class="danger" id="mDeleteYes">Yes, delete my account</button>';
+      $("mDeleteYes").onclick = async () => { try { await api("/api/me", { confirm: true }, "DELETE"); setSession("", null); $("panel").innerHTML = ""; } catch (e) { panelError(e); } };
+    };
+  } catch (e) { panelError(e); }
+}
+
+// ------------------------------------------------------------------ group
+function addMember() {
+  if (document.querySelectorAll(".member").length >= 10) return;
+  const row = document.createElement("div");
+  row.className = "member";
+  row.innerHTML = '<input class="gName" maxlength="30" placeholder="Name"><input class="gLikes" maxlength="100" placeholder="Likes, e.g. beaches, food"><input class="gAvoid" maxlength="100" placeholder="Wants to avoid, e.g. nightlife"><button type="button">Remove</button>';
+  row.querySelector("button").onclick = () => row.remove();
+  $("members").appendChild(row);
+}
+function readGroup() {
+  return [...document.querySelectorAll(".member")].map((r) => ({ name: r.querySelector(".gName").value.trim(),
+    likes: r.querySelector(".gLikes").value.split(",").filter((x) => x.trim()), avoid: r.querySelector(".gAvoid").value.split(",").filter((x) => x.trim()) }))
+    .filter((m) => m.name || m.likes.length || m.avoid.length);
+}
+$("addMember").onclick = addMember;
+$("interestList").textContent = INTERESTS.join(", ");
+addMember(); addMember();
+
+// ------------------------------------------------ suggestions / other places
+function placeCards(items, baseline) {
+  return `<div class="grid2">${items.map((p) => `<div class="card" style="margin:0"><b>${esc(p.name)}</b> <span class="muted">${esc(p.country)}</span> <span class="badge">estimated</span>
+    <div class="muted" style="font-size:13px">${esc(p.tags.join(" · "))} · ${p.in_season ? "good time to go" : "off season"}</div>
+    From about <b>${inr(p.estimate_from)}</b> · comfortable ${inr(p.estimate_comfortable)}
+    ${baseline ? `<div class="muted" style="font-size:13px">${p.estimate_from <= baseline.from ? inr(baseline.from - p.estimate_from) + " less" : inr(p.estimate_from - baseline.from) + " more"} than your current place at the cheapest level</div>` : ""}
+    ${p.fits_budget ? "" : '<div style="color:var(--bad);font-size:13px">Above your budget</div>'}
+    <div style="margin-top:8px"><button data-place="${esc(p.name)}">Plan ${esc(p.name)}</button></div></div>`).join("")}</div>`;
+}
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function shortDay(iso) {
+  const [, month, day] = String(iso).split("-").map(Number);
+  return `${day} ${MONTH_NAMES[month - 1].slice(0, 3)}`;
+}
+function requestFor(c) {                 // the trip as it stands now (after any changes), without a destination
+  const from = (c.origin_geo && c.origin_geo.name) || cap(c.origin);
+  const [, month, day] = String(c.start_date).split("-").map(Number);
+  let text = `Plan a ${c.days} day trip from ${from} starting ${day} ${MONTH_NAMES[month - 1]}, budget ${c.budget} for ${c.travelers} people`;
+  if ((c.preferences || []).length) text += ", love " + c.preferences.map((p) => (p === "family" ? "family-friendly" : p)).join(" and ");
+  if (c.pace === "relaxed") text += ", relaxed pace";
+  return text;
+}
+function wirePlaces(base, group) {
+  document.querySelectorAll("#plan button[data-place]").forEach((b) => b.onclick = () => {
+    runPlan(base.replace(/\s*\|\s*(destination|travel):[^|]*/gi, "") + " | destination: " + b.dataset.place, group);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
+// -------------------------------------------------------------------- map
+let map = null;
+const DAY_COLORS = ["#2b6cb0", "#dd6b20", "#38a169", "#805ad5", "#c53030", "#0987a0", "#b7791f", "#d53f8c", "#4a5568", "#2f855a", "#9c4221", "#553c9a", "#285e61", "#702459"];
+function mapStops(it) {
+  const stops = []; let missing = 0;
+  it.days.forEach((d) => { let n = 0; d.items.forEach((x) => {
+    if (x.type !== "activity") return;
+    if (typeof x.lat === "number" && typeof x.lon === "number") stops.push({ day: d.day, order: ++n, name: x.name, start: x.start, lat: x.lat, lon: x.lon });
+    else missing++;
+  }); });
+  return { stops, missing };
+}
+function mapCard(it) {
+  const { stops, missing } = mapStops(it);
+  return `<div class="card"><b>Map</b> <span class="badge">approximate positions</span>
+    <div class="row days" style="margin-top:8px"><button data-day="0" aria-pressed="true">All days</button>${it.days.map((d) => `<button data-day="${d.day}" aria-pressed="false">Day ${d.day}</button>`).join("")}</div>
+    <div id="map"></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">${stops.length} planned stop(s) shown${missing ? `; ${missing} without a fixed location (such as a meal or walk) are not on the map` : ""}. Lines show visiting order, not roads. Hotels are not plotted because the planner picks a hotel category, not a specific property.</p></div>`;
+}
+function drawMap(it, centre) {
+  if (map) { map.remove(); map = null; }
+  const box = $("map");
+  if (!box) return;
+  if (!window.L) { box.innerHTML = '<p class="muted">The map library could not be loaded (it needs internet access). The itinerary above is complete without it.</p>'; return; }
+  const { stops } = mapStops(it);
+  map = L.map(box, { scrollWheelZoom: false });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  const show = (day) => {
+    layer.clearLayers();
+    const shown = stops.filter((s) => !day || s.day === day);
+    shown.forEach((s) => {
+      L.circleMarker([s.lat, s.lon], { radius: 9, color: "#fff", weight: 2, fillColor: DAY_COLORS[(s.day - 1) % DAY_COLORS.length], fillOpacity: 0.95 })
+        .bindTooltip(esc(`${day ? s.order + ". " : "Day " + s.day + ": "}${s.name}`))
+        .bindPopup(esc(`Day ${s.day}, ${s.start} · ${s.name}`)).addTo(layer);
+    });
+    if (day && shown.length > 1) L.polyline(shown.map((s) => [s.lat, s.lon]), { color: DAY_COLORS[(day - 1) % DAY_COLORS.length], weight: 3, dashArray: "6 6" }).addTo(layer);
+    if (shown.length) map.fitBounds(L.latLngBounds(shown.map((s) => [s.lat, s.lon])).pad(0.2), { maxZoom: 15 });
+    else if (centre && typeof centre.lat === "number") map.setView([centre.lat, centre.lon], 12);
+    else map.setView([20, 78], 4);
+  };
+  show(0);
+  document.querySelectorAll("button[data-day]").forEach((b) => b.onclick = () => {
+    document.querySelectorAll("button[data-day]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    show(Number(b.dataset.day));
+  });
 }
 function busy(on) { $("busy").classList.toggle("hidden", !on); $("go").disabled = on; document.querySelectorAll("#plan button").forEach(b => b.disabled = on); }
 function banner(kind, text) { return `<div class="banner ${kind}">${esc(text)}</div>`; }
@@ -123,13 +350,25 @@ function weatherIcon(w) {
 }
 
 let travelWord = "Flight";
+const MODE_NAME = { flight: "Flight", train: "Train", bus: "Bus", car: "Car", bike: "Bike", ground: "Train/bus" };
+const MODE_ICON = { flight: "✈️", train: "🚆", bus: "🚌", car: "🚗", bike: "🏍️", ground: "🚆" };
+let travelMode = "flight";
+function priceBadge(blk) {
+  return blk && blk.live ? `<span class="badge live">live</span>` : `<span class="badge">estimated</span>`;
+}
+function priceSource(blk) {
+  if (!blk || !blk.live) return "";
+  let when = "";
+  try { when = " · fetched " + new Date(blk.fetched_at).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) {}
+  return `<div class="muted" style="font-size:12px">${esc(blk.source || "web")}${when}${blk.fx_note ? " · " + esc(blk.fx_note) : ""}</div>`;
+}
 function budgetBlock(br) {
   const L = br.lines, max = Math.max(br.total, br.budget) * 1.08 || 1;
   const seg = (k, c) => `<span style="width:${(L[k] / max) * 100}%;background:var(--${c})" title="${k}: ${inr(L[k])}"></span>`;
   const over = br.over_budget;
   return `<div class="card">
     <div class="row" style="justify-content:space-between">
-      <div><span class="big">${inr(br.total)}</span> <span class="muted">of ${inr(br.budget)} budget</span> <span class="badge">estimated</span></div>
+      <div><span class="big">${inr(br.total)}</span> <span class="muted">of ${inr(br.budget)} budget</span> <span class="badge">estimated</span>${(br.live || []).length ? ` <span class="badge live">${br.live.join(" &amp; ")} live</span>` : ""}</div>
       <div style="color:var(--${over ? "bad" : "ok"});font-weight:600">${over ? "Over by " + inr(br.total - br.budget) : inr(br.remaining) + " left"}</div>
     </div>
     <div class="bar" style="margin-top:10px">${seg("flight","flight")}${seg("hotel","hotel")}${seg("activities","acts")}${seg("food","food")}
@@ -164,39 +403,76 @@ function metricsHtml(m) {
 
 function render(s) {
   thread = s.thread_id;
+  tripName = "";
   const out = [];
   if (["blocked", "needs_info", "cancelled"].includes(s.status)) {
+    const opts = s.travel_options || [];
+    if (opts.length) {                      // the planner asks how to travel: show only the choices
+      const lead = String(s.message || "").split("\n")[0].split(" Reply with")[0] + " Pick one below.";
+      $("msg").innerHTML = banner("warn", lead);
+      $("plan").innerHTML = `<div class="grid2">${opts.map((o) => o.available
+        ? `<div class="card"><b>${MODE_ICON[o.mode]} ${esc(o.label)}</b> <span class="badge">estimated</span>${o.usual ? ' <span class="badge">your usual</span>' : ""}<br>
+            <span class="muted">${esc(o.detail || "")}</span><br>About <b>${inr(o.price_pp)}</b> per person round trip · ${esc(String(o.duration_h))} h each way
+            ${typeof o.co2_kg_pp === "number" ? `<div style="font-size:13px;margin-top:4px">🌱 about ${esc(String(o.co2_kg_pp))} kg CO₂e per person, there and back (estimate)${o.greenest ? ' <span class="badge live">lowest emissions</span>' : ""}</div>` : ""}
+            ${o.extra_days ? `<div style="font-size:13px;margin-top:4px">Leave <b>${shortDay(o.leave_date)}</b> · back home <b>${shortDay(o.home_date)}</b></div>` : ""}
+            ${o.warning ? `<div class="journey-warn">⚠ ${esc(o.warning)}</div>` : ""}
+            ${o.note ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(o.note)}</div>` : ""}
+            <div style="margin-top:8px"><button class="primary" data-mode="${esc(o.mode)}">Plan by ${esc(o.label.toLowerCase())}</button></div></div>`
+        : `<div class="card"><b>${MODE_ICON[o.mode]} ${esc(o.label)}</b><br><span class="muted">Not available: ${esc(o.reason)}</span></div>`).join("")}</div>
+        <div class="row" style="margin-top:10px"><button data-mode="any">Any mode: pick the best value for me</button></div>`;
+      document.querySelectorAll("#plan button[data-mode]").forEach((b) => b.onclick = () => {
+        const m = b.dataset.mode;
+        const base = lastRequest.replace(/\s*\|\s*travel:.*$/i, "");
+        runPlan(base + (m === "any" ? " | travel: any mode" : " | travel: by " + m), s.group);
+      });
+      return;
+    }
+    const ideas = s.suggestions || [];
+    if (ideas.length) {
+      $("msg").innerHTML = banner("warn", "You didn't name a destination. Here are some that suit your trip (prices are estimates).");
+      $("plan").innerHTML = placeCards(ideas) + '<p class="muted">Or type any other city or town in your request.</p>';
+      wirePlaces(s.request, s.group);
+      return;
+    }
     $("msg").innerHTML = banner(s.status === "blocked" ? "bad" : "warn", s.message);
     $("plan").innerHTML = ""; return;
   }
   $("msg").innerHTML = s.status === "booked"
     ? banner("ok", `Booked (MOCK): ${s.booking.booking_id}. ${s.booking.status}`)
-    : banner("ok", s.message);
+    : banner(s.status === "booking_cancelled" ? "warn" : "ok", s.message);
   const c = s.constraints, it = s.itinerary;
   const placeName = (role) => (c[role + "_geo"] && c[role + "_geo"].name) || cap(c[role]);
   const f0 = s.flight && s.flight.selected;
-  travelWord = f0 && f0.mode === "ground" ? "Train/bus" : "Flight";
+  travelMode = (f0 && f0.mode) || "flight";
+  travelWord = MODE_NAME[travelMode] || "Flight";
   out.push(`<div class="card"><div class="big">${c.days}-day trip: ${esc(placeName("origin"))} → ${esc(placeName("destination"))}</div>
     <div class="muted">${esc(it.start_date)} to ${esc(it.end_date)} · ${c.travelers} traveler(s) · strategy <b>${esc(s.strategy)}</b>
     · auto-replans ${s.retries}/2 · revisions ${s.revisions}/2 · engine ${esc(s.engine)}</div></div>`);
   (s.warnings || []).filter((w, i, a) => a.indexOf(w) === i).forEach((w) => out.push(banner("warn", w)));
+  const journey = s.flight && s.flight.selected && s.flight.journey;
+  if (journey && journey.warning) out.push(banner("warn", journey.warning));
   out.push(budgetBlock(s.budget_report));
+  if ((s.group_report || []).length) {
+    out.push(`<div class="card"><b>Group fit</b>${s.group_report.map((m) => `<div class="sight"><b>${esc(m.name)}</b> <span class="muted">${m.likes.length ? "likes " + esc(m.likes.join(", ")) : "no interests given"}${m.avoid.length ? " · avoids " + esc(m.avoid.join(", ")) : ""}</span>
+      <div class="when">${m.likes.length ? `${m.matched.length} of ${m.activities} planned activities match` : ""}${m.conflicts.length ? ` · includes something to avoid: ${esc(m.conflicts.join(", "))}` : ""}</div></div>`).join("")}</div>`);
+  }
   const f = s.flight && s.flight.selected, h = s.hotel && s.hotel.selected;
   out.push(`<div class="grid2">
-    <div class="card"><b>${esc(travelWord)}</b> <span class="badge">estimated</span><br>${f ? `${esc(f.label)}<br>Out ${esc(f.depart_out)} → ${esc(f.arrive_out)} · back ${esc(f.depart_back)}<br><b>${inr(f.price_pp)}</b> per person round trip` : '<span class="muted">Unavailable (tool failure)</span>'}</div>
-    <div class="card"><b>Hotel</b> <span class="badge">estimated</span><br>${h ? `${esc(h.label)}<br>${inr(h.price_night_per_room)}/room/night × ${h.nights} nights × ${h.rooms} room(s)<br><b>${inr(h.total)}</b>` : '<span class="muted">Unavailable (tool failure)</span>'}</div>
+    <div class="card"><b>${esc(travelWord)}</b> ${priceBadge(s.flight)}<br>${f ? `${esc(f.label)}<br>Out ${esc(f.depart_out)} → ${esc(f.arrive_out)} · back ${esc(f.depart_back)}${journey && journey.extra_days ? `<br>Leave home <b>${shortDay(journey.leave_date)}</b> · back home <b>${shortDay(journey.home_date)}</b>` : ""}<br><b>${inr(f.price_pp)}</b> per person round trip${priceSource(s.flight)}${s.flight.footprint ? `<div class="muted" style="font-size:13px">🌱 about ${esc(String(s.flight.footprint.kg_pp))} kg CO₂e per person, there and back (estimate)</div>` : ""}` : '<span class="muted">Unavailable (tool failure)</span>'}</div>
+    <div class="card"><b>Hotel</b> ${priceBadge(s.hotel)}<br>${h ? `${esc(h.label)}<br>${inr(h.price_night_per_room)}/room/night × ${h.nights} nights × ${h.rooms} room(s)<br><b>${inr(h.total)}</b>${priceSource(s.hotel)}` : '<span class="muted">Unavailable (tool failure)</span>'}</div>
   </div>`);
   const w = s.weather;
   out.push(`<div class="muted" style="margin:14px 0 -6px">Weather: ${esc(w && w.source || "unavailable")}</div>`);
   it.days.forEach((d) => {
     const items = d.items.map((x) => `<li><span class="t">${esc(x.start)}–${esc(x.end)}</span>
-      <span style="flex:1">${x.type === "activity" ? "" : "<span class='muted'>" + (x.type === "hotel" ? "🏨 " : "✈️ ") + "</span>"}${esc(x.name)}
+      <span style="flex:1">${x.type === "activity" ? "" : "<span class='muted'>" + (x.type === "hotel" ? "🏨 " : (MODE_ICON[travelMode] || "✈️") + " ") + "</span>"}${esc(x.name)}
       ${x.type === "activity" && x.desc ? `<div class="muted" style="font-size:13px">${esc(x.desc)}</div>` : ""}</span>
       <span>${x.type === "activity" ? (x.cost_total ? inr(x.cost_total) : "<span class='muted'>free</span>") : ""}</span></li>`).join("");
     out.push(`<div class="card day ${d.rainy ? "rainy" : ""}"><h3>Day ${d.day} · ${esc(d.date)} <span class="badge">${esc(d.kind)}</span>
       <span style="float:right;font-weight:400;font-size:13px">${weatherIcon(d.weather)}</span></h3>
       <ul class="items">${items}</ul>${d.notes.map((n) => `<p class="note">☔ ${esc(n)}</p>`).join("")}</div>`);
   });
+  out.push(mapCard(it));
   const A = s.activities || {};
   const planned = {};
   it.days.forEach((d) => d.items.forEach((x) => { if (x.type === "activity") planned[x.name] = `Day ${d.day}, ${x.start}`; }));
@@ -226,20 +502,254 @@ function render(s) {
     out.push(`<div class="card"><b>Good to know</b>${tips.map((t) => `<p class="muted" style="margin:6px 0">${esc(t.text)}</p>`).join("")}
       ${near.length ? `<p class="muted">Also nearby (no prices): ${near.map((n) => esc(n.name)).join(", ")}</p>` : ""}</div>`);
   }
+  const alt = (s.alternatives && s.alternatives.items) || [];
+  if (alt.length && s.status === "awaiting_approval") {
+    out.push(`<details class="card" ${s.budget_report.over_budget ? "open" : ""}><summary>Other places that could work (estimates only)</summary><div style="margin-top:10px">${placeCards(alt, s.alternatives.baseline)}</div></details>`);
+  }
+  if (s.status === "booked") {
+    out.push(`<div class="card"><b>Your booking</b> <span class="badge">mock</span><p class="muted" style="margin:4px 0 8px">${esc(s.booking.booking_id)}. Nothing was really booked or charged.</p>
+      <button class="danger" id="cancelBooking">Cancel this booking…</button><div id="cancelBox"></div></div>`);
+  }
   if (s.status === "awaiting_approval") {
     const can = s.pending_approval && s.pending_approval.can_revise;
     out.push(`<div class="card"><b>Your decision</b>
-      <p class="muted" style="margin:4px 0 10px">Nothing is booked until you approve. Try “make it cheaper”, “budget 80000”, “more food”, “relaxed pace”.</p>
+      <p class="muted" style="margin:4px 0 10px">Nothing is booked until you approve. Try “make it cheaper”, “budget 80000”, “make it 4 days”, “add 1 person”, “move it to January”, “go by train”, “change destination to Jaipur”, “skip water sports”, “more food” or “relaxed pace”.</p>
       <div class="row"><button class="primary" id="approve">Approve &amp; book (mock)</button><button class="danger" id="cancel">Cancel</button></div>
-      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><input id="fb" ${can ? "" : "disabled"} placeholder="${can ? "Request changes…" : "Revision limit reached"}" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><button id="revise" ${can ? "" : "disabled"}>Request changes</button></div>
+      <div class="row" style="margin-top:10px;flex-wrap:nowrap"><input id="fb" ${can ? "" : "disabled"} placeholder="${can ? "Request changes…" : "Revision limit reached"}" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)"><button id="revise" ${can ? "" : "disabled"}>Request changes</button></div>
       <p class="muted" style="margin:6px 0 0;font-size:13px">${s.pending_approval ? s.pending_approval.revisions_left : 0} revision(s) left</p></div>`);
   }
+  out.push(toolkitCard());
   out.push(`<details class="card"><summary>Agent log (${s.log.length} events)</summary>${metricsHtml(s.metrics)}<pre class="log">${esc(s.log.map((l) => `${l.t.slice(11, 23)}  ${l.agent.padEnd(10)} ${l.msg}`).join("\n"))}</pre></details>`);
   $("plan").innerHTML = out.join("");
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  drawMap(it, c.destination_geo);
+  wirePlaces(requestFor(c), s.group);
+  tripName = placeName("destination");
+  wireToolkit();
+  on("cancelBooking", async () => {
+    try {
+      const q = await api("/api/booking/" + thread + "/cancel", { confirm: false });
+      if (q.status !== "confirm_cancellation") { render(q); return; }
+      const t = q.terms;
+      $("cancelBox").innerHTML = banner("warn", `Cancelling now would refund ${inr(t.refund_inr)} of ${inr(t.total_inr)} (${t.refund_pct}%). ${t.policy}`) + '<button class="danger" id="cancelYes">Yes, cancel the booking</button>';
+      $("cancelYes").onclick = async () => {
+        busy(true);
+        try { render(await api("/api/booking/" + thread + "/cancel", { confirm: true })); }
+        catch (e) { $("msg").innerHTML = banner("bad", e.message); }
+        busy(false);
+      };
+    } catch (e) { $("cancelBox").innerHTML = banner("bad", e.message); }
+  });
   on("approve", () => decide({ action: "approve" }));
   on("cancel", () => decide({ action: "cancel" }));
   on("revise", () => { const v = $("fb").value.trim(); if (v) decide({ action: "revise", feedback: v }); });
+}
+
+// ============================================================ shared helpers for the trip tools
+let tripName = "";
+const safeUrl = (u) => (/^https:\/\//.test(String(u)) ? String(u) : "#");
+const link = (l) => (l ? `<a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${esc(l.title)}</a>` : "");
+const telLinks = (value) => String(value).split(/\s+or\s+|,\s*/).filter(Boolean)
+  .map((n) => `<a href="tel:${esc(n.replace(/[^0-9+]/g, ""))}">${esc(n)}</a>`).join(' <span class="muted">or</span> ');
+const longDay = (iso) => `${shortDay(iso)} ${String(iso).slice(0, 4)}`;
+const options = (values, labels) => values.map((v) => `<option value="${esc(v)}">${esc((labels && labels[v]) || cap(String(v).replace(/_/g, " ")))}</option>`).join("");
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ============================================================ emergency
+function numbersHtml(n) {
+  if (!n) return "";
+  if (!n.verified) return banner("warn", n.message);
+  return `<div class="calls">${n.calls.map((c) => `<div class="call ${c.primary ? "primary" : ""}"><div class="muted" style="font-size:13px">${esc(c.label)}</div>${telLinks(c.number)}</div>`).join("")}</div>
+    ${n.note ? `<p class="muted" style="margin:4px 0">${esc(n.note)}</p>` : ""}
+    <p class="muted" style="font-size:12px;margin:4px 0">Checked ${esc(longDay(n.checked_on))}. Sources: ${n.sources.map(link).join(" · ")}</p>`;
+}
+const PLACE_TITLES = { hospital: "🏥 Hospitals", clinic: "⚕️ Clinics", pharmacy: "💊 Pharmacies", police: "👮 Police" };
+function nearbyHtml(r) {
+  const n = r.nearby;
+  if (!n) return "";
+  if (!n.ok) return banner("warn", "Nearby places could not be loaded. " + n.reason);
+  const groups = Object.keys(PLACE_TITLES).filter((k) => (n.places[k] || []).length);
+  if (!groups.length) return banner("warn", "OpenStreetMap lists no hospitals, pharmacies or police stations nearby. Call the emergency number.");
+  return `<p class="muted" style="font-size:12px;margin:10px 0 0">${esc(r.map_note || "")}</p>` + groups.map((k) => `<h4>${PLACE_TITLES[k]}</h4>${n.places[k].map((p) => `<div class="place">
+    <b>${esc(p.name)}</b> <span class="muted">· ${esc(String(p.distance_km))} km</span>
+    ${p.emergency_dept ? '<span class="badge live">emergency department listed</span>' : ""}${p.open_24h ? ' <span class="badge">open 24/7</span>' : ""}
+    <div style="font-size:14px">${p.phone ? "📞 " + telLinks(p.phone) + " · " : ""}<a href="${esc(safeUrl(p.map_url))}" target="_blank" rel="noopener noreferrer">Map</a></div>
+    ${p.address || (p.hours && !p.open_24h) ? `<div class="muted" style="font-size:13px">${esc([p.address, p.open_24h ? "" : p.hours].filter(Boolean).join(" · "))}</div>` : ""}</div>`).join("")}`).join("");
+}
+function emergencyHtml(r) {
+  return `<h4>Emergency numbers${r.where && r.where.source !== "device" ? " · " + esc(r.where.name) + (r.where.country ? ", " + esc(r.where.country) : "") : ""}</h4>
+    ${numbersHtml(r.numbers)}${r.where && r.where.note ? `<p class="muted" style="font-size:12px">${esc(r.where.note)}</p>` : ""}${nearbyHtml(r)}
+    <p style="font-size:14px">${(r.links || []).map(link).join(" · ")}</p>`;
+}
+// `box` receives the answer to `request`; for a named place or a trip the map search is a second step
+async function askEmergency(box, request) {
+  box.innerHTML = '<p class="muted">Looking…</p>';
+  try {
+    const r = await api("/api/emergency", request);
+    box.innerHTML = emergencyHtml(r) + (!r.nearby && r.where.source !== "device"
+      ? '<button type="button" class="findNear">Find hospitals and pharmacies nearby</button>' : "");
+    const more = box.querySelector(".findNear");
+    if (more) more.onclick = () => askEmergency(box, { ...request, nearby: true });
+  } catch (e) {
+    box.innerHTML = banner("bad", e.message + " If this is urgent, call your local emergency number now.");
+  }
+}
+$("sosBtn").onclick = () => {
+  if ($("sos").innerHTML) { $("sos").innerHTML = ""; return; }
+  $("sos").innerHTML = `<div class="card" style="border-color:var(--bad)">
+    <div class="row" style="justify-content:space-between"><b>Emergency help</b><button type="button" id="sosClose">Close</button></div>
+    <p style="margin:6px 0"><b>In danger or badly hurt? Call the local emergency number first.</b></p>
+    <div class="row"><input id="sosPlace" maxlength="80" placeholder="Town or city you are in" aria-label="Town or city you are in">
+      <button type="button" class="primary" id="sosShow">Show numbers</button><button type="button" id="sosHere">Use my location</button>
+      ${tripName ? `<button type="button" id="sosTrip">For ${esc(tripName)}</button>` : ""}</div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">“Use my location” sends your position to this app's server and to OpenStreetMap's map service to find places nearby. The app does not save it.</p>
+    <div id="sosOut"></div></div>`;
+  const box = $("sosOut");
+  $("sosClose").onclick = () => { $("sos").innerHTML = ""; };
+  const byPlace = () => { const v = $("sosPlace").value.trim(); if (v) askEmergency(box, { place: v }); };
+  $("sosShow").onclick = byPlace;
+  $("sosPlace").onkeydown = (e) => { if (e.key === "Enter") byPlace(); };
+  if ($("sosTrip")) { const id = thread; $("sosTrip").onclick = () => askEmergency(box, { thread_id: id }); }
+  $("sosHere").onclick = () => {
+    if (!navigator.geolocation) { box.innerHTML = banner("warn", "This browser cannot share a location. Type the town instead."); return; }
+    box.innerHTML = '<p class="muted">Waiting for your browser to share the location…</p>';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => askEmergency(box, { lat: pos.coords.latitude, lon: pos.coords.longitude, nearby: true }),
+      () => { box.innerHTML = banner("warn", "The location was not shared. Type the town you are in instead."); },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 });
+  };
+};
+
+// ============================================================ trip toolkit tabs
+const TOOL_TABS = [["companion", "🎒 Packing & customs"], ["emergency", "🆘 Emergency"], ["documents", "📄 Documents"], ["footprint", "🌱 Emissions"], ["expenses", "💰 Expenses"]];
+function toolkitCard() {
+  return `<div class="card"><b>Trip toolkit</b>
+    <div class="row tabs" style="margin-top:8px">${TOOL_TABS.map(([k, t]) => `<button type="button" data-tool="${k}" aria-pressed="false">${t}</button>`).join("")}</div>
+    <div id="toolBody" class="muted" style="margin-top:6px">Choose a tool. These use your plan and never change it.</div></div>`;
+}
+function wireToolkit() {
+  document.querySelectorAll("button[data-tool]").forEach((b) => b.onclick = () => {
+    document.querySelectorAll("button[data-tool]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    openTool(b.dataset.tool);
+  });
+}
+const toolPath = (tool, item) => "/api/trip/" + encodeURIComponent(thread) + "/" + tool + (item ? "/" + encodeURIComponent(item) : "");
+const DRAW = { companion: drawCompanion, emergency: drawEmergency, documents: drawDocuments, footprint: drawFootprint, expenses: drawExpenses };
+let openedTool = "";
+function show(tool, data) {                  // draw only if that tool is still the one on screen
+  const box = $("toolBody");
+  if (!box || openedTool !== tool) return;
+  box.className = "";
+  box.innerHTML = '<div id="toolMsg"></div><div id="toolView"></div>';
+  DRAW[tool]($("toolView"), data);
+}
+async function openTool(tool) {
+  openedTool = tool;
+  const box = $("toolBody");
+  box.className = "muted"; box.textContent = "Loading…";
+  try { show(tool, await api(toolPath(tool))); }
+  catch (e) { if (openedTool === tool) { box.className = ""; box.innerHTML = banner("bad", e.message); } }
+}
+function toolError(e) { const el = $("toolMsg"); if (el) { el.innerHTML = banner("bad", e.message); el.scrollIntoView({ block: "nearest" }); } }
+async function change(tool, path, body, method) {
+  try { show(tool, await api(path, body, method)); return true; }
+  catch (e) { toolError(e); return false; }
+}
+
+function drawCompanion(box, d) {
+  const key = "tp_pack_" + thread;
+  let packed = [];
+  try { packed = JSON.parse(store.get(key) || "[]"); } catch (e) {}
+  const info = d.info;
+  box.innerHTML = `${info ? `<h4>Useful information · ${esc(d.destination)}</h4>
+      <div class="calls">${[["Money", info.currency], ["Traffic drives on the", info.drives_on], ["Plug types", info.plug_types], ["Dialling code", info.dialling_code]].map(([a, b]) => `<div class="call"><div class="muted" style="font-size:13px">${a}</div><b>${esc(b)}</b></div>`).join("")}</div>` : ""}
+    <h4>Packing list</h4>${d.packing.note ? `<p class="muted" style="margin:4px 0;font-size:13px">${esc(d.packing.note)}</p>` : ""}
+    ${d.packing.groups.map((g) => `<div style="margin-top:8px"><b>${esc(g.title)}</b>${g.items.map((i) => {
+      const id = g.title + "|" + i.name;
+      return `<label class="checkline"><input type="checkbox" class="pack" data-id="${esc(id)}" ${packed.includes(id) ? "checked" : ""}><span>${esc(i.name)}${i.why ? ` <span class="muted" style="font-size:13px">· ${esc(i.why)}</span>` : ""}</span></label>`; }).join("")}</div>`).join("")}
+    <h4>Local customs</h4>${d.customs.specific ? "" : '<p class="muted" style="margin:4px 0;font-size:13px">General courtesy tips: there is no list for this country.</p>'}
+    <ul>${d.customs.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+    ${(d.local.sections || []).map((x) => `<h4>${esc(x.title)} <span class="muted" style="font-weight:400;font-size:13px">from the <a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener noreferrer">Wikivoyage guide to ${esc(x.page)}</a> (CC BY-SA)</span></h4>${x.text.map((t) => `<p class="muted" style="margin:4px 0">${esc(t)}</p>`).join("")}`).join("")}
+    <p class="muted" style="font-size:12px">${esc(d.info_note)} Ticks on the packing list are kept only in this browser.</p>`;
+  box.querySelectorAll(".pack").forEach((x) => x.onchange = () => {
+    store.set(key, JSON.stringify([...box.querySelectorAll(".pack:checked")].map((c) => c.dataset.id)));
+  });
+}
+
+function drawEmergency(box, d) {
+  box.innerHTML = `${banner("bad", d.call_first)}<div id="tripHelp">${emergencyHtml(d)}<button type="button" class="findNear">Find hospitals and pharmacies nearby</button></div>`;
+  const id = thread;
+  box.querySelector(".findNear").onclick = () => askEmergency($("tripHelp"), { thread_id: id, nearby: true });
+}
+
+const LEVELS = { required: ["Needed", "bad"], check: ["Check", "warn"], advised: ["Advised", ""] };
+function drawDocuments(box, d) {
+  box.innerHTML = `<p class="muted" style="margin:6px 0;font-size:13px">${esc(d.disclaimer)}</p>
+    <h4>Checklist</h4>${d.checklist.map((i) => `<label class="checkline"><input type="checkbox" class="tick" data-id="${esc(i.id)}" ${i.done ? "checked" : ""}>
+      <span><b>${esc(i.title)}</b> <span class="badge" ${LEVELS[i.level][1] ? `style="color:var(--${LEVELS[i.level][1]})"` : ""}>${LEVELS[i.level][0]}</span>
+      <div class="muted" style="font-size:13px">${esc(i.detail)} ${link(i.link)}</div></span></label>`).join("")}
+    ${d.can_save ? "" : '<p class="muted" style="font-size:13px">Sign in to save your ticks and your documents. As a guest, ticks are lost when you leave this tab.</p>'}
+    <h4>Passport check</h4>
+    <div class="row"><label class="field">Expiry date<input type="date" id="ppExpiry"></label><label class="field">Issue date (optional)<input type="date" id="ppIssued"></label><button type="button" id="ppCheck">Check</button></div>
+    <p class="muted" style="font-size:12px;margin:4px 0">Only the dates are used, and they are not saved.</p><div id="ppOut"></div>
+    <h4>Reminders</h4>${d.reminders.length ? d.reminders.map((r) => `<div class="place">${r.problem ? "⚠️ " : ""}<b>${r.overdue && !r.problem ? "Do now" : esc(longDay(r.date))}</b> · ${esc(r.title)}${r.detail ? `<div class="muted" style="font-size:13px">${esc(r.detail)}</div>` : ""}</div>`).join("") + '<div style="margin-top:8px"><button type="button" id="icsBtn">Add to my calendar (.ics file)</button></div>' : '<p class="muted">Nothing left to do for this trip.</p>'}
+    <h4>My documents</h4><p class="muted" style="margin:4px 0;font-size:13px">${esc(d.number_warning)}</p>
+    ${d.entries.map((e) => `<div class="trip"><span><b>${esc(e.label)}</b> <span class="badge">${esc(e.kind.replace(/_/g, " "))}</span>${e.expiry ? ` <span class="muted">· expires ${esc(longDay(e.expiry))}</span>` : ""}${e.note ? `<div class="muted" style="font-size:13px">${esc(e.note)}</div>` : ""}</span><button type="button" data-del="${esc(e.id)}" aria-label="Delete ${esc(e.label)}">Delete</button></div>`).join("")}
+    ${d.can_save ? `<div class="row" style="margin-top:8px;align-items:flex-end"><label class="field">Type<select id="docKind">${options(d.kinds)}</select></label><label class="field">Name<input id="docLabel" maxlength="80" placeholder="e.g. Passport - Asha"></label><label class="field">Expiry (optional)<input type="date" id="docExpiry"></label><label class="field">Note (optional)<input id="docNote" maxlength="200"></label><button type="button" class="primary" id="docAdd">Save</button></div>`
+      : '<button type="button" id="docSignIn">Sign in to save documents</button>'}`;
+  box.querySelectorAll(".tick").forEach((x) => x.onchange = () => {
+    if (d.can_save) change("documents", toolPath("documents", "tick"), { check_id: x.dataset.id, done: x.checked });
+  });
+  $("ppCheck").onclick = async () => {
+    try {
+      const r = await api(toolPath("documents", "passport-check"), { expiry: $("ppExpiry").value, issued: $("ppIssued").value || null });
+      const kind = r.status === "problem" ? "bad" : r.status === "check" ? "warn" : "ok";
+      $("ppOut").innerHTML = `<div class="banner ${kind}">${r.messages.map((m) => `<div>${esc(m)}</div>`).join("")}${r.links.length ? `<div style="margin-top:6px">${r.links.map(link).join(" · ")}</div>` : ""}</div>`;
+    } catch (e) { $("ppOut").innerHTML = banner("bad", e.message); }
+  };
+  if ($("icsBtn")) $("icsBtn").onclick = () => download("trip-reminders.ics", d.calendar, "text/calendar;charset=utf-8");
+  box.querySelectorAll("button[data-del]").forEach((b) => b.onclick = () => change("documents", toolPath("documents", b.dataset.del), null, "DELETE"));
+  if ($("docAdd")) $("docAdd").onclick = () => change("documents", toolPath("documents"), { kind: $("docKind").value, label: $("docLabel").value, expiry: $("docExpiry").value || null, note: $("docNote").value });
+  if ($("docSignIn")) $("docSignIn").onclick = () => { showSignIn(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+}
+
+function drawFootprint(box, d) {
+  if (!d.available) { box.innerHTML = banner("warn", d.reason); return; }
+  const max = Math.max(...d.modes.filter((m) => m.available).map((m) => m.kg_pp), 1);
+  box.innerHTML = `<h4>Getting there and back · per person <span class="badge">estimated</span></h4>
+    ${d.modes.map((m) => m.available ? `<div class="co2"><b>${MODE_ICON[m.mode]} ${esc(m.label)}</b><div class="track"><span class="${m.lowest ? "low" : ""}" style="width:${Math.max(2, (m.kg_pp / max) * 100)}%"></span></div><span style="text-align:right">${esc(String(m.kg_pp))} kg</span></div>
+      <div class="muted" style="font-size:13px;margin:-2px 0 4px">${esc(m.basis)}${m.fuel_only_kg_pp ? ` (${esc(String(m.fuel_only_kg_pp))} kg from fuel alone)` : ""} · about ${esc(String(m.hours))} h each way ${m.selected ? '<span class="badge">your plan</span>' : ""}${m.lowest ? ' <span class="badge live">lowest emissions</span>' : ""}</div>`
+      : `<div class="muted" style="padding:4px 0">${MODE_ICON[m.mode]} ${esc(m.label)}: ${esc(m.reason)}</div>`).join("")}
+    ${d.advice.map((a) => banner("ok", a)).join("")}
+    <h4>Lighter travel</h4><ul>${d.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+    <details><summary>How these are calculated</summary><p class="muted" style="font-size:13px">${esc(d.method)}</p><p class="muted" style="font-size:13px">kg of CO₂ or CO₂-equivalent. Sources: ${d.sources.map(link).join(" · ")}</p></details>`;
+}
+
+function signedMoney(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + inr(Math.abs(n)); }
+function drawExpenses(box, d) {
+  const S = d.summary, T = S.total;
+  // while the trip is not over, being under the estimate means nothing yet, so only overspending is coloured
+  const diffCell = (r) => !r.entries ? '<td class="muted">–</td>' : `<td style="color:var(--${r.difference > 0 ? "bad" : S.stage === "final" ? "ok" : "muted"})">${signedMoney(r.difference)}</td>`;
+  box.innerHTML = `<h4>Planned against actual <span class="badge">${esc(S.stage)}</span></h4>
+    <div class="tablewrap"><table class="money"><tr><th>Category</th><th>Planned</th><th>Spent</th><th>Difference</th></tr>
+      ${S.categories.map((r) => `<tr><td>${esc(r.label)}</td><td>${inr(r.planned)}</td><td>${r.entries ? inr(r.actual) : '<span class="muted">–</span>'}</td>${diffCell(r)}</tr>`).join("")}
+      <tr><th>Total</th><th>${inr(T.planned)}</th><th>${inr(T.actual)}</th><th></th></tr></table></div>
+    <p style="margin:8px 0">Budget ${inr(T.budget)} · <b style="color:var(--${T.budget_left < 0 ? "bad" : "ok"})">${T.budget_left < 0 ? "over by " + inr(-T.budget_left) : inr(T.budget_left) + " left"}</b>${T.actual ? ` · spent ${inr(T.per_person)} per person` : ""}</p>
+    <ul>${S.insights.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>
+    <h4>Add an expense</h4><p class="muted" style="margin:4px 0;font-size:13px">${esc(S.note)}</p>
+    <div class="row" style="align-items:flex-end"><label class="field">Category<select id="exCat">${options(d.categories, d.labels)}</select></label><label class="field">Amount (₹)<input id="exAmount" inputmode="decimal" maxlength="12"></label><label class="field">Date<input type="date" id="exDate" value="${esc(d.today)}"></label><label class="field">Note (optional)<input id="exNote" maxlength="120"></label><button type="button" class="primary" id="exAdd">Add</button></div>
+    ${d.entries.map((e) => `<div class="trip"><span><b>${inr(e.amount)}</b> ${esc(d.labels[e.category])} <span class="muted">· ${esc(longDay(e.date))}${e.note ? " · " + esc(e.note) : ""}</span></span><button type="button" data-del="${esc(e.id)}" aria-label="Delete this expense">Delete</button></div>`).join("")}
+    ${d.entries.length ? '<div style="margin-top:8px"><button type="button" id="csvBtn">Download as CSV</button></div>' : ""}`;
+  const add = () => change("expenses", toolPath("expenses"), { category: $("exCat").value, amount: $("exAmount").value, date: $("exDate").value || null, note: $("exNote").value });
+  $("exAdd").onclick = add;
+  $("exAmount").onkeydown = (e) => { if (e.key === "Enter") add(); };
+  if ($("csvBtn")) $("csvBtn").onclick = () => download("trip-expenses.csv", "﻿" + d.csv, "text/csv;charset=utf-8");
+  box.querySelectorAll("button[data-del]").forEach((b) => b.onclick = () => change("expenses", toolPath("expenses", b.dataset.del), null, "DELETE"));
 }
 
 async function decide(body) {
@@ -249,17 +759,27 @@ async function decide(body) {
   busy(false);
 }
 
-$("go").onclick = async () => {
-  const text = $("prompt").value.trim();
-  if (!text) return;
+let lastRequest = "";
+async function runPlan(text, group) {
+  lastRequest = text;
+  const members = group && group.length ? group : readGroup();
   busy(true); $("msg").innerHTML = ""; $("plan").innerHTML = "";
-  try { render(await api("/api/plan", { request: text })); }
+  try { render(await api("/api/plan", members.length ? { request: text, group: members } : { request: text })); }
   catch (e) { $("msg").innerHTML = banner("bad", e.message); }
   busy(false);
+}
+
+$("go").onclick = () => {
+  const text = $("prompt").value.trim();
+  if (text) runPlan(text);
 };
 
+drawAccount();
+if (token) api("/api/me").then((r) => { me = r.user; drawAccount(); }).catch(() => setSession("", null));
+
 api("/api/health").then((h) => {
-  $("attr").textContent = "Weather data by Open-Meteo.com · Place data © OpenStreetMap contributors · Sights from Wikipedia and Wikivoyage (CC BY-SA). Mode: " + h.mode + " · engine: " + h.engine;
+  authRequired = !!h.auth_required; drawAccount();
+  $("attr").textContent = "Weather data by Open-Meteo.com · Place data and map tiles © OpenStreetMap contributors · Sights and local tips from Wikipedia and Wikivoyage (CC BY-SA) · Emergency number sources are shown with each result. Mode: " + h.mode + " · engine: " + h.engine;
 }).catch(() => {});
 </script>
 </body>

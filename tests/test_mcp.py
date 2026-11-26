@@ -20,7 +20,13 @@ ARGS = {
     "get_weather": dict(destination="goa", start_date="2026-12-10", days=5, today="2026-11-24"),
     "search_places": dict(destination="goa", preferences=["beach", "food"]),
     "search_dining": dict(destination="goa"),
+    "find_help_nearby": dict(lat=15.38, lon=73.83),
+    "local_tips": dict(destination="goa"),
     "book_trip": dict(idempotency_key="abc", summary={"x": 1}),
+    "recommend_destinations": dict(origin="delhi", start_date="2027-01-10", days=4, travelers=2, budget=90000,
+                                   preferences=["beach"]),
+    "cancel_booking": dict(booking_id="MOCK-1", idempotency_key="abc", start_date="2026-12-10",
+                           today="2026-11-24", total=1000),
 }
 
 
@@ -77,3 +83,10 @@ def test_full_plan_identical_through_mcp(mcp_client):
     a, b = plan(InProcessClient()), plan(mcp_client)
     assert a["budget_report"] == b["budget_report"] and a["itinerary"] == b["itinerary"]
     assert a["strategy"] == b["strategy"] == "cheaper"
+
+
+@pytest.mark.parametrize("mode", ["flight", "train", "bus", "car", "bike"])
+def test_travel_mode_argument_matches_over_mcp(mcp_client, mode):
+    args = dict(origin="delhi", destination="jaipur", depart_date="2026-12-10", return_date="2026-12-13",
+                travelers=2, mode=mode)
+    assert mcp_client.call("search_flights", **args) == InProcessClient().call("search_flights", **args)

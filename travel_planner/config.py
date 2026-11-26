@@ -101,8 +101,51 @@ def real_data_enabled() -> bool:
     return env_bool("REAL_DATA", True)
 
 
+def tavily_key() -> str:
+    return os.environ.get("TAVILY_API_KEY", "").strip()
+
+
+def live_prices_enabled() -> bool:
+    """Live flight and hotel prices need the Tavily key, internet access (REAL_DATA) and LIVE_PRICES not switched off."""
+    return real_data_enabled() and bool(tavily_key()) and env_bool("LIVE_PRICES", True)
+
+
+def _env_number(name: str, default: float, low: float, high: float) -> float:
+    try:
+        return min(high, max(low, float(os.environ.get(name, default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def live_daily_credits() -> int:
+    """Tavily credits the planner may spend per day (a page read costs 2; the free plan has ~33 a day)."""
+    return int(_env_number("LIVE_DAILY_CREDITS", 30, 0, 100_000))
+
+
+def live_cache_hours() -> float:
+    return _env_number("LIVE_CACHE_HOURS", 3, 0, 72)
+
+
+def auth_required() -> bool:
+    """AUTH_REQUIRED=1: only signed-in users may plan. Off by default so guests can use the planner."""
+    return env_bool("AUTH_REQUIRED", False)
+
+
+def rate_limits_enabled() -> bool:
+    return env_bool("RATE_LIMIT", True)
+
+
+def rate_limit(name: str, default: int) -> int:
+    return int(_env_number(f"RATE_LIMIT_{name}", default, 1, 1_000_000))
+
+
 def tools_mode() -> str:
     return os.environ.get("TOOLS_MODE", "inprocess").strip().lower()   # inprocess | mcp
+
+
+def ask_travel_mode() -> bool:
+    """Ask "flight, train, bus, car or bike?" when a request does not say. ASK_TRAVEL_MODE=0 turns it off."""
+    return os.environ.get("ASK_TRAVEL_MODE", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 def db_path() -> str:

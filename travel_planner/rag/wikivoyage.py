@@ -333,3 +333,68 @@ def _safe_text(get: Callable[[str], str], title: str) -> str:
 
 
 live_eat_listings = eat_listings          # tests replace the name above; this stays the real one
+
+
+# ---------------------------------------------------------------------------------------------
+# Local etiquette and safety: the Respect / Stay safe / Stay healthy sections of a guide.
+# ---------------------------------------------------------------------------------------------
+CULTURE_SECTIONS = ("Respect", "Stay safe", "Stay healthy")
+_HEADING = re.compile(r"^==\s*([^=].*?)\s*==\s*$", re.M)
+
+
+def split_sections(text: str, names: tuple = CULTURE_SECTIONS, per_section: int = 3, max_chars: int = 380) -> dict:
+    """{section name: [short sanitised paragraphs]} from a plain-text extract."""
+    heads = list(_HEADING.finditer(text or ""))
+    out: dict[str, list[str]] = {}
+    for i, m in enumerate(heads):
+        name = m.group(1).strip()
+        if name not in names:
+            continue
+        body = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        paragraphs = []
+        for line in body.split("\n"):
+            line = line.strip()
+            if line.startswith("="):
+                continue
+            line = sanitize_untrusted(line, 2000)
+            if len(line) < 60:
+                continue
+            if len(line) > max_chars:
+                cut = line.rfind(". ", 0, max_chars)
+                line = line[:cut + 1] if cut > 80 else line[:max_chars].rsplit(" ", 1)[0] + "..."
+            paragraphs.append(line)
+            if len(paragraphs) >= per_section:
+                break
+        if paragraphs:
+            out[name] = paragraphs
+    return out
+
+
+def _page_sections(title: str, fetch: Callable[[str], str]) -> dict:
+    from ..tools import cache                                  # local import: avoids a package import cycle
+    key = f"wikivoyage-sections:v1:{title.lower()}"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        found = split_sections(fetch(title))
+    except Exception:                                          # noqa: BLE001 - no tips is fine
+        return {}
+    if found:
+        cache.put(key, found)
+    return found
+
+
+def culture_sections(title: str, country: str = "", fetch: Callable[[str], str] | None = None) -> list[dict]:
+    """Each wanted section from the place's own guide, or from the country guide when the place has none."""
+    get = fetch or _fetch
+    local = _page_sections(title, get) if title else {}
+    missing = [n for n in CULTURE_SECTIONS if n not in local]
+    wider = _page_sections(country, get) if missing and country and country.lower() != title.lower() else {}
+    out = []
+    for name in CULTURE_SECTIONS:
+        page, source = (title, local) if name in local else (country, wider)
+        if name in source:
+            out.append({"title": name, "page": page, "text": source[name],
+                        "url": "https://en.wikivoyage.org/wiki/" + urllib.parse.quote(page.replace(" ", "_"))})
+    return out

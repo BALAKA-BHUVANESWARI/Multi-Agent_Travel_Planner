@@ -43,7 +43,7 @@ def build_graph(deps: Deps, checkpointer=None):
         # Pauses the graph; the checkpointer persists state until Command(resume=decision) arrives.
         decision = interrupt({"kind": "approval", "message": state.get("message"),
                               "pending": state.get("pending_approval")})
-        return agents.approval_node(state, decision)
+        return agents.approval_node(state, decision, deps)
 
     g.add_node("approval", approval)
 
@@ -87,9 +87,10 @@ class GraphPlanner:
     def _cfg(self, thread_id: str) -> dict:
         return {"configurable": {"thread_id": thread_id}, "recursion_limit": 60}
 
-    def start(self, request: str, thread_id: str | None = None) -> dict:
+    def start(self, request: str, thread_id: str | None = None, group: list | None = None,
+              memory: dict | None = None) -> dict:
         tid = thread_id or uuid.uuid4().hex[:12]
-        self.graph.invoke(initial_state(request, tid), self._cfg(tid))
+        self.graph.invoke(initial_state(request, tid, group, memory), self._cfg(tid))
         state = self.get(tid)
         self.deps.store.save_state(tid, state)
         return state
@@ -107,6 +108,13 @@ class GraphPlanner:
         state = self.get(thread_id)
         self.deps.store.save_state(thread_id, state)
         return state
+
+    def delete(self, thread_id: str) -> None:
+        self.deps.store.delete_trip(thread_id)
+        try:                                      # older checkpointer versions cannot delete a thread
+            self.graph.checkpointer.delete_thread(thread_id)
+        except (AttributeError, NotImplementedError):
+            pass
 
     def get(self, thread_id: str) -> dict | None:
         snap = self.graph.get_state(self._cfg(thread_id))

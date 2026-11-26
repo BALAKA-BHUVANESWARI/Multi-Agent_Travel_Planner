@@ -5,7 +5,8 @@ from pathlib import Path
 
 # Tests are offline and key-less by default.
 os.environ["REAL_DATA"] = "0"
-for k in ("GROQ_API_KEY", "GEMINI_API_KEY", "OLLAMA_ENABLED"):
+for k in ("GROQ_API_KEY", "GEMINI_API_KEY", "OLLAMA_ENABLED", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE",
+          "TAVILY_API_KEY"):
     os.environ.pop(k, None)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

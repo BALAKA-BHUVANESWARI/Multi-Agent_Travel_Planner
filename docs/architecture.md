@@ -24,6 +24,12 @@ flowchart TD
     WR --> E
 ```
 
+Around the graph, in `service.py` and not in the graph: accounts and sessions, saved preferences, trip ownership,
+rate limits and booking cancellation. A cancellation happens after the graph has ended, so it is stored on the
+booking record and laid over the finished state when it is read; both engines behave the same. Destination
+suggestions are a tool (`recommend_destinations`) that intake calls when no destination is named and `present`
+calls for alternatives.
+
 ## Why two engines share one set of nodes
 
 `agents.py` holds every node as a plain function `fn(state, deps) -> update`. `routing.py` holds the conditional
@@ -37,7 +43,9 @@ edges as pure functions. Two thin shells execute them:
 
 ## Shared state
 
-One typed `TripState`. Workers write separate keys (`flight`, `hotel`, `weather`, `activities`), so parallel
+One typed `TripState`. It also carries `group`, `group_report`, `memory`, `excluded`, `suggestions` and `alternatives`.
+A `warnings` update that starts with `RESET` replaces the list, so a changed destination drops old warnings.
+ Workers write separate keys (`flight`, `hotel`, `weather`, `activities`), so parallel
 writes never conflict. Only `log` and `warnings` are append-only (reducers). Nodes that decide a route
 (`budget`, `critic`, `approval`) set `replan_reason`; routers only read it; the Supervisor consumes it.
 
@@ -88,7 +96,32 @@ writes never conflict. Only `log` and `warnings` are append-only (reducers). Nod
 
 ## MCP
 
-`mcp_server.py` serves the five tools over stdio (`python -m travel_planner.mcp_server`). `McpClient` keeps one
+`mcp_server.py` serves the tools over stdio (`python -m travel_planner.mcp_server`). `McpClient` keeps one
 persistent session in a background event loop. Tool errors travel as data (`{error, retryable}`) so the client
 raises the same `ToolError` as the in-process client. Works with the v1 `FastMCP` and v2 `MCPServer` SDKs.
 Switch with `TOOLS_MODE=mcp`; a test proves identical results.
+
+## Trip toolkit
+
+`travel_planner/toolkit/` holds the five post-planning features. It sits beside the graph, not in it:
+
+```
+UI -> /api/trip/{id}/{tool}  -> PlannerService (access rules, rate limit) -> toolkit/handlers.py
+UI -> /api/emergency         -> PlannerService (no sign-in needed)        -> toolkit/emergency.py
+handlers -> saved plan (read only) + trip_items table (documents, ticks, expenses)
+handlers -> tools find_help_nearby / local_tips (in-process or MCP)
+```
+
+| Module | Job |
+|---|---|
+| `companion.py`, `countries.py` | Packing rules, customs, country facts |
+| `emergency.py`, `emergency_numbers.py` | Sourced numbers; cleaning and sorting of nearby places |
+| `documents.py` | Checklist, passport check, reminders, calendar file, refusal of document numbers |
+| `footprint.py` | Emission factors and the comparison; also used by the flight node and the travel choices |
+| `expenses.py` | Validation, planned against actual, CSV |
+| `handlers.py` | Turns a saved plan into each view |
+
+No new graph state key was added (LangGraph drops undeclared keys): the plan's footprint is stored inside `flight`.
+Nothing in the toolkit calls an AI model. The only network calls are the two tools, which use OpenStreetMap
+(Overpass) and Wikivoyage and return an empty, explained result when offline.
+

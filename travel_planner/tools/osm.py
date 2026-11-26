@@ -167,3 +167,65 @@ def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[s
 
 
 live_restaurant_elements = restaurant_elements          # tests replace the name above; this stays the real one
+
+
+# ---------------------------------------------------------------- emergency help
+HELP_TTL = 7 * 24 * 3600                    # hospitals and pharmacies change more often than sights
+_HELP_CACHE: dict[tuple, dict] = {}
+WIDE_RADIUS = 20_000
+
+
+def help_query(lat: float, lon: float, radius_m: int) -> str:
+    """The country the point is in, then each kind of place with its own limit, so that a city with hundreds of
+    pharmacies cannot crowd the hospitals out of the answer. Pharmacies and clinics use a smaller circle."""
+    wide, near = f"(around:{radius_m},{lat},{lon})", f"(around:{radius_m // 2},{lat},{lon})"
+    return ("[out:json][timeout:20];"
+            f'is_in({lat},{lon})->.here;area.here["admin_level"="2"]["ISO3166-1:alpha2"];out tags;'
+            f'nwr["amenity"="hospital"]["name"]{wide};out tags center 200;'
+            f'nwr["amenity"="police"]["name"]{wide};out tags center 60;'
+            f'nwr["amenity"="pharmacy"]["name"]{near};out tags center 200;'
+            f'nwr["amenity"="clinic"]["name"]{near};out tags center 100;')
+
+
+def _split_help(data: dict) -> tuple[list, str]:
+    elements, cc = [], ""
+    for el in data.get("elements", []):
+        if el.get("type") == "area":
+            code = str((el.get("tags") or {}).get("ISO3166-1:alpha2") or "").upper()
+            cc = code if len(code) == 2 and code.isalpha() else cc
+        else:
+            elements.append(el)
+    if not elements and data.get("remark"):                    # Overpass reports its own time-outs this way
+        raise OSError("the map server could not finish the search")
+    return elements, cc
+
+
+def help_places(lat: float, lon: float, radius_m: int = 5000, remember: bool = True,
+                post: Callable[[str], dict] | None = None) -> dict | None:
+    """{"elements": [...], "cc": "IN"} around a point, or None when no map server answered.
+    ``remember=False`` (the traveller's own position) keeps nothing in memory or on disk."""
+    key = (round(lat, 3), round(lon, 3), radius_m)
+    disk_key = f"osm-help:v1:{key[0]},{key[1]},{radius_m}"
+    if remember:
+        found = _HELP_CACHE.get(key) or cache.get(disk_key, ttl=HELP_TTL)
+        if found:
+            return found
+    run = post or (lambda q: _post_with_mirrors(q, timeout=15.0, budget=25.0))
+    try:
+        elements, cc = _split_help(run(help_query(lat, lon, radius_m)))
+    except Exception:                                          # noqa: BLE001 - the numbers still work offline
+        return None
+    kinds = [(e.get("tags") or {}).get("amenity") for e in elements]
+    if radius_m < WIDE_RADIUS and (kinds.count("hospital") < 3 or "pharmacy" not in kinds):
+        try:                                                   # a rural spot: look further out
+            more, cc2 = _split_help(run(help_query(lat, lon, WIDE_RADIUS)))
+            have = {(e.get("type"), e.get("id")) for e in elements}
+            elements += [e for e in more if (e.get("type"), e.get("id")) not in have]
+            cc = cc or cc2
+        except Exception:                                      # noqa: BLE001 - keep what the first search found
+            pass
+    result = {"elements": elements, "cc": cc}
+    if remember and elements:
+        _HELP_CACHE[key] = result
+        cache.put(disk_key, result)
+    return result

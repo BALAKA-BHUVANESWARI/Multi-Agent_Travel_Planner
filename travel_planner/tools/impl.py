@@ -1,8 +1,11 @@
 """Tool implementations. Pure functions with JSON-friendly arguments and results.
 
 The same functions are served in-process and through the MCP server.
-Flights and hotels are SYNTHETIC ESTIMATES (no free real API exists); every result
-carries ``estimated: True`` so the UI/README can label it.
+Flights and hotels are SYNTHETIC ESTIMATES by default (no free real API exists); every estimated result
+carries ``estimated: True`` so the UI/README can label it. When a Tavily key is set, ``search_flights`` and
+``search_hotels`` first try LIVE prices read from Google Flights / Google Hotels (``tools/live.py``); a live result
+carries ``estimated: False`` plus ``source`` and ``fetched_at``, and any failure falls back to the estimate with a
+plain ``live_note`` saying why.
 """
 from __future__ import annotations
 
@@ -14,9 +17,10 @@ from datetime import date, timedelta
 from .. import config
 from ..rag import wikivoyage
 from ..rag.store import KnowledgeBase
+from ..toolkit import emergency
 from ..utils import hash01, round_to, to_hhmm
-from . import dining, dynamic, geo as geo_mod, openmeteo, osm, wikipedia
-from .catalog import CITIES, DESTINATIONS, SUPPORTED_DESTINATIONS
+from . import dining, dynamic, gazetteer, geo as geo_mod, live, openmeteo, osm, recommend, transport, wikipedia
+from .catalog import CITIES, DESTINATIONS, SUPPORTED_DESTINATIONS, coordinates
 from .errors import ToolError
 
 
@@ -62,6 +66,13 @@ def _origin_point(origin: str, origin_geo=None) -> tuple[float, float, str, floa
     raise ToolError(f"unknown origin '{origin}'", retryable=False)
 
 
+def _origin_name(origin: str, origin_geo=None) -> str:
+    if origin in CITIES:
+        return CITIES[origin][0]
+    g = _clean_geo(origin_geo)
+    return g["name"] if g else origin
+
+
 def _country(slug: str, geo) -> str:
     if slug in DESTINATIONS:
         return "IN"
@@ -98,7 +109,15 @@ LONG_HAUL_KM = 9000      # beyond this the estimator offers one-stop itineraries
 
 
 def search_flights(origin: str, destination: str, depart_date: str, return_date: str, travelers: int,
-                   origin_geo: dict | None = None, destination_geo: dict | None = None) -> dict:
+                   origin_geo: dict | None = None, destination_geo: dict | None = None,
+                   mode: str | None = None, live_prices: bool = True) -> dict:
+    """Round-trip travel options. ``mode``: flight | train | bus | car | bike, or None / "auto" to let the
+    estimator choose (a flight, or train/bus for short distances). ``live_prices=False`` skips the live lookup
+    (used for the quick "how would you like to travel" cards, which would otherwise spend Tavily credits)."""
+    mode = (mode or "auto").lower()
+    if mode != "auto" and mode not in transport.MODES:
+        raise ToolError(f"unknown travel mode '{mode}' (use one of: {', '.join(transport.MODES)} or auto)",
+                        retryable=False)
     d = _dest(destination, destination_geo)
     olat, olon, o_cc, o_cf = _origin_point(origin, origin_geo)
     if origin == destination:
@@ -121,7 +140,17 @@ def search_flights(origin: str, destination: str, depart_date: str, return_date:
             "price_pp": round_to(price), "estimated": True,
         }
 
-    if km < GROUND_KM:                                            # short hop: train / bus
+    if mode in ("train", "bus", "car", "bike"):                   # the traveller chose an overland mode
+        if transport.crosses_sea((olat, olon, o_cc), (d["lat"], d["lon"], d_cc)):
+            raise ToolError("No road or rail link: this trip crosses the sea. Try flight.", retryable=False)
+        days = (ret - dep).days + 1
+        options, basis = transport.options_for(mode, km, o_cf, d["cost_factor"], travelers, days,
+                                               international, jitter)
+        return {"source": "synthetic-estimator", "estimated": True, "origin": origin, "destination": destination,
+                "depart_date": depart_date, "return_date": return_date, "travelers": travelers,
+                "distance_km": round(km), "currency": "INR", "price_basis": basis, "mode": mode,
+                "international": international, "options": options}
+    if mode == "auto" and km < GROUND_KM:                         # short hop: train / bus
         rate = 2.5 * (((o_cf + d["cost_factor"]) / 2) ** 0.7)       # INR per km one way, per person (comfortable seat)
         base = max(300.0, rate * km) * 2 * jitter
         dur = km / 55.0 + 0.5
@@ -161,10 +190,20 @@ def search_flights(origin: str, destination: str, depart_date: str, return_date:
                     "flight"),
             ]
         mode, basis = "flight", "round trip, per person"
-    return {"source": "synthetic-estimator", "estimated": True, "origin": origin, "destination": destination,
-            "depart_date": depart_date, "return_date": return_date, "travelers": travelers,
-            "distance_km": round(km), "currency": "INR", "price_basis": basis, "mode": mode,
-            "international": international, "options": options}
+    result = {"source": "synthetic-estimator", "estimated": True, "origin": origin, "destination": destination,
+              "depart_date": depart_date, "return_date": return_date, "travelers": travelers,
+              "distance_km": round(km), "currency": "INR", "price_basis": basis, "mode": mode,
+              "international": international, "options": options}
+    if mode == "flight" and live_prices and config.live_prices_enabled():
+        try:
+            result.update(live.flights(origin, destination, _origin_name(origin, origin_geo), d["name"], dep, ret,
+                                       travelers))
+        except live.LiveUnavailable as e:
+            result["live_note"] = f"Live fares were unavailable ({e}); the flight price is an estimate."
+        except Exception as e:                                       # noqa: BLE001 - never let this break a plan
+            result["live_note"] = (f"Live fares were unavailable ({type(e).__name__}); the flight price is an "
+                                   "estimate.")
+    return result
 
 
 # ------------------------------------------------------------------- hotels
@@ -176,7 +215,7 @@ HOTEL_TIERS = [
 
 
 def search_hotels(destination: str, checkin: str, nights: int, travelers: int,
-                  destination_geo: dict | None = None) -> dict:
+                  destination_geo: dict | None = None, live_prices: bool = True) -> dict:
     d = _dest(destination, destination_geo)
     ci = _date(checkin)
     if nights < 1:
@@ -189,8 +228,17 @@ def search_hotels(destination: str, checkin: str, nights: int, travelers: int,
         options.append({"id": tier, "tier": tier, "label": f"{label} ({d['hotel_area']})",
                         "price_night_per_room": round_to(base * d["cost_factor"] * season * jitter),
                         "estimated": True})
-    return {"source": "synthetic-estimator", "estimated": True, "destination": destination, "checkin": checkin,
-            "nights": nights, "rooms": rooms, "currency": "INR", "options": options}
+    result = {"source": "synthetic-estimator", "estimated": True, "destination": destination, "checkin": checkin,
+              "nights": nights, "rooms": rooms, "currency": "INR", "options": options}
+    if live_prices and config.live_prices_enabled():
+        try:
+            result.update(live.hotels(d["name"], ci, nights))
+        except live.LiveUnavailable as e:
+            result["live_note"] = f"Live hotel prices were unavailable ({e}); the hotel price is an estimate."
+        except Exception as e:                                       # noqa: BLE001 - never let this break a plan
+            result["live_note"] = (f"Live hotel prices were unavailable ({type(e).__name__}); the hotel price is "
+                                   "an estimate.")
+    return result
 
 
 # ------------------------------------------------------------------ weather
@@ -309,7 +357,7 @@ def search_places(destination: str, preferences: list | None = None, destination
     # Prefer real travel text; the curated one-liners only repeat the place list, so use them as an offline fallback.
     tips = [{"text": t["text"], "source": t["source"]} for t in (wiki or hits)]
     return {"source": "curated+rag", "estimated": True, "destination": destination, "currency": "INR",
-            "candidates": [dict(p) for p in d["places"]], "tips": tips, "nearby": nearby,
+            "candidates": [{**p, **coordinates(p["id"])} for p in d["places"]], "tips": tips, "nearby": nearby,
             "attribution": attributions, "data_quality": "curated"}
 
 
@@ -351,6 +399,40 @@ def resolve_place(query: str) -> dict:
     return {"geo": g, "attribution": attribution}
 
 
+# ------------------------------------------------------------------ toolkit
+def find_help_nearby(lat: float, lon: float, remember: bool = True) -> dict:
+    """Hospitals, clinics, pharmacies and police near a point, from OpenStreetMap. Never raises for a map outage:
+    ``ok`` is false and ``reason`` says why, so the emergency numbers are still shown. ``remember=False`` keeps no
+    copy of the position or the result (used for the traveller's own location)."""
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        raise ToolError("invalid coordinates", retryable=False)
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ToolError("invalid coordinates", retryable=False)
+    if not config.real_data_enabled():
+        return {"ok": False, "reason": "Live map data is switched off (REAL_DATA=0).", "country_code": "",
+                "places": emergency.build_places([], lat, lon), "attribution": []}
+    found = osm.help_places(lat, lon, remember=remember)
+    if found is None:
+        return {"ok": False, "reason": "The free map service did not answer. Try again in a minute.",
+                "country_code": "", "places": emergency.build_places([], lat, lon), "attribution": []}
+    return {"ok": True, "reason": "", "country_code": found["cc"],
+            "places": emergency.build_places(found["elements"], lat, lon), "attribution": [osm.ATTRIBUTION]}
+
+
+def local_tips(destination: str, destination_geo: dict | None = None) -> dict:
+    """Etiquette and safety text about the destination from Wikivoyage; empty when offline or none exists."""
+    d = _dest(destination, destination_geo)
+    cc = _country(destination, destination_geo)
+    if not config.real_data_enabled():
+        return {"sections": [], "attribution": []}
+    given = destination_geo.get("country") if isinstance(destination_geo, dict) else ""
+    country = gazetteer.COUNTRY_NAMES.get(cc) or " ".join(str(given or "").split())[:60]
+    sections = wikivoyage.culture_sections(d["wikivoyage"], country)
+    return {"sections": sections, "attribution": [wikivoyage.ATTRIBUTION] if sections else []}
+
+
 # ------------------------------------------------------------------ booking
 def book_trip(idempotency_key: str, summary: dict | None = None) -> dict:
     """MOCK booking. Nothing is purchased. Deterministic for a given key."""
@@ -362,12 +444,40 @@ def book_trip(idempotency_key: str, summary: dict | None = None) -> dict:
             "summary": summary or {}}
 
 
+# MOCK cancellation policy: (at least this many days before the start, percent refunded)
+REFUND_STEPS = ((7, 100), (2, 50), (0, 0))
+
+
+def cancellation_terms(start_date: str, today: str, total: int) -> dict:
+    """What cancelling would refund under the MOCK policy."""
+    days_left = (_date(start_date) - _date(today)).days
+    pct = next((p for floor, p in REFUND_STEPS if days_left >= floor), 0)
+    return {"days_before_start": days_left, "refund_pct": pct, "refund_inr": int(round(total * pct / 100)),
+            "total_inr": int(total),
+            "policy": "MOCK policy: full refund 7 or more days before the trip, 50% from 2 to 6 days, "
+                      "nothing after that. No money was ever taken."}
+
+
+def cancel_booking(booking_id: str, idempotency_key: str, start_date: str, today: str, total: int) -> dict:
+    """MOCK cancellation. Nothing was charged, so nothing is really refunded. Deterministic for a given key."""
+    if not booking_id or not idempotency_key:
+        raise ToolError("booking_id and idempotency_key required", retryable=False)
+    cid = "CANCEL-" + hashlib.sha256(f"cancel|{idempotency_key}".encode()).hexdigest()[:8].upper()
+    return {"cancellation_id": cid, "booking_id": booking_id,
+            "status": "cancelled (MOCK - nothing was actually booked, charged or refunded)",
+            **cancellation_terms(start_date, today, total)}
+
+
 TOOLS = {
     "resolve_place": resolve_place,
+    "recommend_destinations": recommend.recommend_destinations,
+    "cancel_booking": cancel_booking,
     "search_flights": search_flights,
     "search_hotels": search_hotels,
     "get_weather": get_weather,
     "search_places": search_places,
     "search_dining": search_dining,
+    "find_help_nearby": find_help_nearby,
+    "local_tips": local_tips,
     "book_trip": book_trip,
 }

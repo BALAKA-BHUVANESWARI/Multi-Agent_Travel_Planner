@@ -11,7 +11,7 @@ try:                                            # mcp >= 2
 except ImportError:                             # mcp 1.x
     from mcp.server.fastmcp import FastMCP as _Server
 
-from .tools import impl
+from .tools import impl, recommend
 from .tools.errors import ToolError
 
 
@@ -34,18 +34,22 @@ def resolve_place(query: str) -> dict[str, Any]:
 @mcp.tool()
 def search_flights(origin: str, destination: str, depart_date: str, return_date: str, travelers: int,
                    origin_geo: dict[str, Any] | None = None,
-                   destination_geo: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Estimated round-trip travel options (synthetic estimator, INR per person): flights, or train/bus
-    for short distances. ``*_geo`` is the record returned by resolve_place for non-curated places."""
+                   destination_geo: dict[str, Any] | None = None,
+                   mode: str | None = None, live_prices: bool = True) -> dict[str, Any]:
+    """Round-trip travel options, INR per person: LIVE Google Flights fares when a Tavily key is set and the
+    lookup works (``estimated`` is then false), otherwise a synthetic estimate. ``mode``: flight, train, bus, car
+    or bike (None or "auto": a flight, or train/bus for short distances). ``*_geo`` is the record returned by
+    resolve_place for non-curated places. ``live_prices=False`` skips the live lookup."""
     return _run(impl.search_flights, origin, destination, depart_date, return_date, travelers,
-                origin_geo, destination_geo)
+                origin_geo, destination_geo, mode, live_prices)
 
 
 @mcp.tool()
 def search_hotels(destination: str, checkin: str, nights: int, travelers: int,
-                  destination_geo: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Estimated hotel options by tier (synthetic estimator, INR per room per night)."""
-    return _run(impl.search_hotels, destination, checkin, nights, travelers, destination_geo)
+                  destination_geo: dict[str, Any] | None = None, live_prices: bool = True) -> dict[str, Any]:
+    """Hotel options by tier, INR per room per night: LIVE Google Hotels prices when a Tavily key is set and the
+    lookup works (``estimated`` is then false), otherwise a synthetic estimate."""
+    return _run(impl.search_hotels, destination, checkin, nights, travelers, destination_geo, live_prices)
 
 
 @mcp.tool()
@@ -66,6 +70,36 @@ def search_places(destination: str, preferences: list[str] | None = None,
 def search_dining(destination: str, destination_geo: dict[str, Any] | None = None) -> dict[str, Any]:
     """Top restaurants split into vegetarian and non-vegetarian, with hours and best time to go (live data)."""
     return _run(impl.search_dining, destination, destination_geo)
+
+
+@mcp.tool()
+def recommend_destinations(origin: str, start_date: str, days: int, travelers: int, budget: int,
+                           preferences: list[str] | None = None, exclude: str | None = None,
+                           origin_geo: dict[str, Any] | None = None, exclude_geo: dict[str, Any] | None = None,
+                           scope: str = "any", mode: str | None = None, limit: int = 4) -> dict[str, Any]:
+    """Destinations that suit the interests, month and budget, priced with the estimator (never live fares)."""
+    return _run(recommend.recommend_destinations, origin, start_date, days, travelers, budget, preferences,
+                exclude, origin_geo, exclude_geo, scope, mode, limit)
+
+
+@mcp.tool()
+def find_help_nearby(lat: float, lon: float, remember: bool = True) -> dict[str, Any]:
+    """Hospitals, clinics, pharmacies and police stations near a point (OpenStreetMap), with phone numbers where
+    mapped. ``remember=False`` keeps no copy of the position."""
+    return _run(impl.find_help_nearby, lat, lon, remember)
+
+
+@mcp.tool()
+def local_tips(destination: str, destination_geo: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Etiquette and safety paragraphs about a destination from Wikivoyage (live data)."""
+    return _run(impl.local_tips, destination, destination_geo)
+
+
+@mcp.tool()
+def cancel_booking(booking_id: str, idempotency_key: str, start_date: str, today: str,
+                   total: int) -> dict[str, Any]:
+    """MOCK cancellation of a MOCK booking. Nothing was charged or refunded."""
+    return _run(impl.cancel_booking, booking_id, idempotency_key, start_date, today, total)
 
 
 @mcp.tool()

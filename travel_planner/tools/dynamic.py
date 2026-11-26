@@ -150,6 +150,20 @@ def _cost(base: int, factor: float, tags: dict) -> int:
     return int(round_to(base * (factor ** 0.8), 10)) if base else 0
 
 
+def position(el: dict, tags: dict) -> dict:
+    """{'lat','lon'} when the source gave a believable position, else {}. Wikivoyage and Wikipedia put it in the
+    tags (x_lat/x_lon), OpenStreetMap on the element (lat/lon, or center for ways)."""
+    try:
+        c = el.get("center") or el
+        lat = float(tags.get("x_lat", c.get("lat")))
+        lon = float(tags.get("x_lon", c.get("lon")))
+    except (TypeError, ValueError):
+        return {}
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):
+        return {}
+    return {"lat": round(lat, 5), "lon": round(lon, 5)}
+
+
 def _record(pid: str, name: str, kind: str, factor: float, city: str, osm_tags: dict) -> dict:
     t, outdoor, base, hours, slot, label = KINDS[kind]
     desc = sanitize_untrusted(osm_tags.get("description:en") or osm_tags.get("description") or "", 140)
@@ -204,15 +218,15 @@ def build_candidates(geo: dict, elements: list[dict]) -> tuple[list[dict], list[
         prefix = {"wikipedia": "wp", "wikivoyage": "wv"}.get(src, "osm")
         pid = f"{prefix}-{el.get('id', len(found))}" if src != "osm" else \
             f"osm-{str(el.get('type', 'x'))[:1]}{el.get('id', len(found))}"
-        found.append((_score(tags), name, kind, pid, tags, src))
+        found.append((_score(tags), name, kind, pid, tags, src, position(el, tags)))
     found.sort(key=lambda x: (-x[0], x[1]))
     chosen: list[dict] = []
     per_kind: dict[str, int] = {}
     rest: list[tuple] = []
-    for score, name, kind, pid, tags, src in found:
+    for score, name, kind, pid, tags, src, pos in found:
         if len(chosen) < MAX_CANDIDATES and per_kind.get(kind, 0) < KIND_CAP.get(kind, 3):
             per_kind[kind] = per_kind.get(kind, 0) + 1
-            chosen.append(_record(pid, name, kind, factor, city, tags))
+            chosen.append({**_record(pid, name, kind, factor, city, tags), **pos})
         else:
             rest.append((score, name, kind, src))
     have_museum = any(c["id"].startswith(("osm-", "wp-", "wv-")) and "culture" in c["tags"] and not c["outdoor"]
