@@ -28,13 +28,15 @@ Built on **LangGraph** and **MCP**. It runs on free tiers and free data sources,
 | Dashboard | A trip form or plain language, agent status, and 10 popular destinations in India to start from |
 | World destinations | A second page with 15 popular places around the world, and "Explore more places": type any place name to see it with its top sights and pictures |
 | Plan any destination | A day-by-day itinerary with times, top sights, where to eat (veg and non-veg), a map and a budget breakdown |
-| Photos in the day plan | Thumbnails under each sight, a full-screen gallery with up to 24 photos, and links to Google Images and Maps |
+| Photos in the day plan | Thumbnails under each sight, a full-screen gallery with up to 24 photos, labelled example photos for flexible suggestions such as dinner, and links to Google Images and Maps |
 | Choose how to travel | Flight, train, bus, car or bike, with price, time and estimated emissions side by side |
+| Chatbot with voice input | Plan, change and ask about a trip by typing or speaking. You check the text before it is sent, and only the buttons can book or cancel |
 | Change the plan by chatting | "make it cheaper", "add 1 person", "go by train", "more food" |
 | Get suggestions | Leave the destination out and compare places that fit your budget |
 | Plan for a group | Everyone's likes and dislikes, with a fairness report |
 | Trip toolkit | Packing list and local customs, emergency numbers and nearby help, document reminders, emissions, expense tracking |
 | Live prices (optional) | Google Flights and Google Hotels prices through a free Tavily key |
+| Metrics dashboard (optional) | A password-protected page at `/dashboard` for whoever runs the app: timings, agents, AI calls, request timelines, data lookups and logs, kept on your computer |
 
 Details of each feature are in [docs/features.md](docs/features.md).
 
@@ -93,6 +95,7 @@ change requests, so a run can never loop forever. See [docs/architecture.md](doc
 │   └── Dockerfile
 ├── frontend/
 │   ├── app/                 # page entry point and styles
+│   ├── dashboard/           # the metrics dashboard page (/dashboard)
 │   ├── components/          # dashboard, account, planner, plan, toolkit, emergency
 │   ├── hooks/               # account, planner, group and map state
 │   ├── services/            # API client and formatting helpers
@@ -149,6 +152,8 @@ All routes start with `/api/v1`. FastAPI serves interactive documentation at `/d
 | `POST /booking/{thread_id}/cancel` | Cancel a mock booking (`{"confirm": true}` to confirm) |
 | `POST /explore` | Show a place and its top sights, with pictures: `{"place": "Prague"}` |
 | `POST /photos` | Which article shows each sight of a saved plan: `{"thread_id": "..."}` |
+| `POST /chat` | One chat message: `{"message": "...", "thread_id": "..."}` (never approves, books or cancels) |
+| `POST /transcribe` | Voice input: the recording as the request body, the words back (needs the Groq key) |
 | `/trip/{thread_id}/{tool}` | Trip toolkit: companion, emergency, documents, footprint, expenses |
 | `POST /emergency` | Emergency numbers and nearby help (never needs sign-in) |
 | `/auth/...`, `/me`, `/trips` | Optional accounts, saved preferences, "My trips" |

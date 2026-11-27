@@ -8,6 +8,7 @@ from app.data import gazetteer
 from app.data.curated_destinations import coordinates
 from app.integrations import openstreetmap as osm
 from app.integrations import wikipedia, wikivoyage
+from app.observability import recorder as observe
 from app.rag.vector_store import KnowledgeBase
 from app.services import dining_service as dining
 from app.services.pricing import price_estimator as dynamic
@@ -24,15 +25,18 @@ def _search_places_generated(destination: str, d: dict, geo: dict, prefs: list[s
     if config.real_data_enabled():
         radius = dynamic.search_radius_m(g["population"])
         pool = ThreadPoolExecutor(max_workers=4)               # four free services, asked at the same time
-        f_osm = pool.submit(osm.place_elements, d["lat"], d["lon"], radius)
-        f_wp = pool.submit(wikipedia.nearby_sights, d["lat"], d["lon"], radius)
-        f_wv = pool.submit(lambda: wikivoyage.add_coordinates(wikivoyage.listings(d["wikivoyage"]), d))
-        f_tips = pool.submit(wikivoyage.load_chunks, d["wikivoyage"])
-        wp_elements, wv_elements, chunks = safe_result(f_wp, []), safe_result(f_wv, []), safe_result(f_tips, [])
+        f_osm = pool.submit(observe.carry(osm.place_elements), d["lat"], d["lon"], radius)
+        f_wp = pool.submit(observe.carry(wikipedia.nearby_sights), d["lat"], d["lon"], radius)
+        f_wv = pool.submit(observe.carry(
+            lambda: wikivoyage.add_coordinates(wikivoyage.listings(d["wikivoyage"]), d)))
+        f_tips = pool.submit(observe.carry(wikivoyage.load_chunks), d["wikivoyage"])
+        wp_elements = safe_result(f_wp, [], label="wikipedia.nearby_sights")
+        wv_elements = safe_result(f_wv, [], label="wikivoyage.sights")
+        chunks = safe_result(f_tips, [], label="wikivoyage.guide_text")
         # Overpass is the slow, often overloaded one. If the fast sources already found enough, give it only a
         # short grace period; it keeps running in the background and fills the cache for next time.
         enough = len(wp_elements) + len(wv_elements) >= ENOUGH_FAST_SIGHTS
-        osm_elements = safe_result(f_osm, [], timeout=OSM_GRACE if enough else None)
+        osm_elements = safe_result(f_osm, [], timeout=OSM_GRACE if enough else None, label="openstreetmap.places")
         pool.shutdown(wait=False)
         elements = osm_elements + wv_elements + wp_elements       # first source wins when names repeat
     candidates, nearby, quality = dynamic.build_candidates(g, elements)
@@ -102,9 +106,10 @@ def search_dining(destination: str, destination_geo: dict | None = None) -> dict
         return {**empty, "note": "Restaurant suggestions need live data (set REAL_DATA=1); none were loaded."}
     radius = 1500 if (g.get("population") or 0) >= 500_000 else 3500
     pool = ThreadPoolExecutor(max_workers=2)
-    f_wv = pool.submit(wikivoyage.eat_listings, d["wikivoyage"])
-    f_osm = pool.submit(osm.restaurant_elements, d["lat"], d["lon"], radius)
-    wv, osm_els = safe_result(f_wv, []), safe_result(f_osm, [], timeout=DINING_GRACE)
+    f_wv = pool.submit(observe.carry(wikivoyage.eat_listings), d["wikivoyage"])
+    f_osm = pool.submit(observe.carry(osm.restaurant_elements), d["lat"], d["lon"], radius)
+    wv = safe_result(f_wv, [], label="wikivoyage.restaurants")
+    osm_els = safe_result(f_osm, [], timeout=DINING_GRACE, label="openstreetmap.restaurants")
     pool.shutdown(wait=False)
     result = dining.build_dining(wv + osm_els, {"lat": d["lat"], "lon": d["lon"]})
     if not (result["veg"] or result["nonveg"] or result["other"]):

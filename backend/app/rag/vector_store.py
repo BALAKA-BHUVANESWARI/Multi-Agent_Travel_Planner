@@ -5,6 +5,8 @@ import math
 import re
 from collections import Counter
 
+from app.observability import recorder as observe
+
 _STOP = {
     "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with", "is", "are", "was", "it",
     "this", "that", "by", "from", "as", "be", "its", "has", "have", "you", "your", "can", "will",
@@ -31,6 +33,16 @@ class KnowledgeBase:
         return {t: math.log((1 + n) / (1 + c)) + 1 for t, c in df.items()}
 
     def query(self, q: str, k: int = 3) -> list[dict]:
+        with observe.span("retrieval", "local_text_search") as step:
+            hits = self._search(q, k)
+            step.set(documents=len(self.docs), results=len(hits), top_score=hits[0]["score"] if hits else 0)
+            if not hits:
+                step.status = "empty"
+            if hits:
+                step.detail("results", [str(h.get("text", ""))[:300] for h in hits])
+            return hits
+
+    def _search(self, q: str, k: int) -> list[dict]:
         if not self.docs:
             return []
         idf = self._idf()

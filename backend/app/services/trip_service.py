@@ -1,7 +1,10 @@
 """Framework-agnostic request handlers shared by the FastAPI app and the stdlib dev server."""
 from __future__ import annotations
 
+import functools
+import uuid
 from collections import OrderedDict
+from contextlib import contextmanager
 
 from app.agents.explore_agent import explore_place
 from app.core import config
@@ -11,6 +14,10 @@ from app.integrations.openmeteo import ATTRIBUTION as METEO
 from app.integrations.openstreetmap import ATTRIBUTION as OSM
 from app.integrations.wikipedia import ATTRIBUTION as WIKIPEDIA
 from app.integrations.wikivoyage import ATTRIBUTION as WIKI
+from app.observability import recorder as observe
+from app.observability.privacy import code as short_code
+from app.observability.summary import plan_summary, run_status
+from app.services import chat_service, speech_service
 from app.services.account_service import AccountError, Accounts
 from app.services.group_service import clean_group
 from app.services.plan_photos import plan_photos
@@ -22,6 +29,7 @@ from app.tools.errors import ToolError
 ATTRIBUTIONS = [METEO, OSM, WIKI, WIKIPEDIA]
 MAX_BODY_CHARS = 20_000
 SIGN_IN = "Please sign in first."
+_FROM_ENV = object()
 
 
 class ApiError(Exception):
@@ -58,14 +66,43 @@ def trip_summary(state: dict) -> dict:
             "total_inr": br.get("total"), "booking_id": (state.get("booking") or {}).get("booking_id")}
 
 
+def _recorded(kind: str):
+    """Keep a record of this request for the dashboard (see app/observability)."""
+    def decorate(method):
+        @functools.wraps(method)
+        def run(self, *args, **kwargs):
+            with self._record(kind):
+                return method(self, *args, **kwargs)
+        return run
+    return decorate
+
+
+def _scrub(text: str) -> str:
+    """Withhold a card number, ID number, code or password before anything else sees the text."""
+    safe = guardrails.scrub(text)
+    if safe != text:
+        observe.event("guardrail", "sensitive_data_withheld", "blocked",
+                      kind=short_code(guardrails.sensitive_kind(text)))
+    return safe
+
+
+def _check_input(text: str) -> dict:
+    verdict = guardrails.check_input(text, require_topic=False)
+    observe.event("guardrail", "input_check", "ok" if verdict["allowed"] else "blocked", code=verdict["code"])
+    return verdict
+
+
 class PlannerService:
-    def __init__(self, planner, limiter: RateLimiter | None = None, require_auth: bool | None = None):
+    def __init__(self, planner, limiter: RateLimiter | None = None, require_auth: bool | None = None,
+                 recorder=_FROM_ENV):
+        self.recorder = observe.Recorder.from_env() if recorder is _FROM_ENV else recorder      # None: off
         self.planner = planner
         self.engine = getattr(planner, "engine", "runner")
         self.limiter = limiter                               # None: no limits (tests, scripts)
         self.require_auth = config.auth_required() if require_auth is None else require_auth
         self.accounts = Accounts(planner.deps.store)
         self._metrics: OrderedDict[str, dict] = OrderedDict()      # last run per thread, for GET
+        self.speech_transport = None                               # None: really call the voice service
 
     # ------------------------------------------------------------ shared checks
     def _limit(self, bucket: str, user: dict | None, client: str) -> None:
@@ -74,10 +111,13 @@ class PlannerService:
         try:
             self.limiter.check(bucket, f"user:{user['id']}" if user else f"ip:{client or 'local'}")
         except RateLimited as e:
+            observe.event("guardrail", "rate_limit", "blocked", bucket=bucket)
             raise ApiError(429, str(e), retry_after=e.retry_after)
 
     def _user(self, token: str | None, required: bool = False) -> dict | None:
         user = self.accounts.user_for(token)
+        if user:
+            observe.set_run(owner=user["id"])             # so that deleting the account deletes the records too
         if token and user is None:
             raise ApiError(401, "Your session has ended. Please sign in again.")
         if user is None and (required or self.require_auth):
@@ -106,6 +146,28 @@ class PlannerService:
                 self._metrics.popitem(last=False)
         return state, metrics
 
+    @contextmanager
+    def _record(self, kind: str):
+        if self.recorder is None:
+            yield
+            return
+        with self.recorder.run(kind):
+            observe.set_run(engine=self.engine)
+            yield
+
+    @staticmethod
+    def _note_plan(state: dict) -> None:
+        """Put the result of a planner call on the request's record."""
+        try:
+            observe.set_run(status=run_status(state), thread_id=state.get("thread_id"), **plan_summary(state))
+        except Exception:                                    # noqa: BLE001 - records must never break a plan
+            pass
+
+    def _forget_records(self, **which) -> None:
+        recorder = self.recorder or observe.Recorder.existing()
+        if recorder is not None:
+            recorder.forget(**which)
+
     def _with_booking_record(self, state: dict) -> dict:
         """A cancellation happens after the graph has finished, so it is read from the bookings table."""
         key = (state.get("booking") or {}).get("idempotency_key")
@@ -125,6 +187,7 @@ class PlannerService:
         return public_view(state, self.engine, metrics)
 
     # ---------------------------------------------------------------- planning
+    @_recorded("plan")
     def plan(self, request, group=None, token: str | None = None, client: str = "") -> dict:
         user = self._user(token)
         self._limit("plan", user, client)
@@ -141,8 +204,14 @@ class PlannerService:
             saved = self.accounts.memory(user["id"])
             memory = saved if saved.get("remember", True) else {}
         self._begin_run()
+        safe = _scrub(request)
+        observe.hide(*[m["name"] for m in members])
+        observe.run_detail("request", safe)
+        thread_id = uuid.uuid4().hex[:12]                  # chosen here so a failed run can still be traced to it
+        observe.set_run(thread_id=thread_id)
         state, metrics = self._traced("plan", lambda: self.planner.start(
-            guardrails.scrub(request), group=members, memory=memory))
+            safe, thread_id=thread_id, group=members, memory=memory))
+        self._note_plan(state)
         return self._view(state, user, metrics)
 
     def _begin_run(self) -> None:
@@ -150,6 +219,7 @@ class PlannerService:
         if llm:
             llm.begin_run()
 
+    @_recorded("approve")
     def approve(self, thread_id: str, body: dict, token: str | None = None, client: str = "") -> dict:
         user = self._user(token)
         self._limit("act", user, client)
@@ -163,16 +233,24 @@ class PlannerService:
             raise ApiError(422, f"'feedback' must be a string under {config.MAX_REQUEST_CHARS} characters")
         self._may_see(thread_id, user)
         self._begin_run()
+        observe.set_run(thread_id=thread_id, action=action)
+        safe = _scrub(feedback)
+        if observe.details_on():
+            saved = self.planner.get(thread_id) or {}
+            observe.hide(*[m.get("name") for m in saved.get("group") or []])
+            observe.run_detail("feedback", safe)
         try:
             state, metrics = self._traced("approve", lambda: self.planner.resume(
-                thread_id, {"action": action, "feedback": guardrails.scrub(feedback)}))
+                thread_id, {"action": action, "feedback": safe}))
         except KeyError:
+            observe.set_run(thread_id=None)                    # no such trip: don't record what was asked for
             raise ApiError(404, f"unknown thread '{thread_id}'")
         except ValueError as e:
             raise ApiError(409, str(e))
         if user and action == "approve" and state.get("status") == "booked" \
                 and self.accounts.owner(thread_id) == user["id"]:
             self.accounts.learn_from_booking(user["id"], state["constraints"])
+        self._note_plan(state)
         return self._view(state, user, metrics)
 
     def get(self, thread_id: str, token: str | None = None, client: str = "") -> dict:
@@ -184,7 +262,78 @@ class PlannerService:
             raise ApiError(404, f"unknown thread '{thread_id}'")
         return public_view(self._with_booking_record(state), self.engine, self._metrics.get(thread_id))
 
+    # ------------------------------------------------------------------- chat
+    @_recorded("chat")
+    def chat(self, body: dict | None, token: str | None = None, client: str = "") -> dict:
+        """POST /api/v1/chat {"message", "thread_id"?, "group"?}. It plans, asks for changes and answers; it has
+        no way to approve, book or cancel."""
+        user = self._user(token)
+        self._limit("act", user, client)
+        if not isinstance(body, dict):
+            raise ApiError(422, "body must be a JSON object")
+        message, thread_id = body.get("message"), body.get("thread_id")
+        if not isinstance(message, str) or not message.strip():
+            raise ApiError(422, "Type a message first.")
+        if len(message) > config.MAX_REQUEST_CHARS:
+            raise ApiError(422, f"Keep a message under {config.MAX_REQUEST_CHARS} characters.")
+        if thread_id is not None and (not isinstance(thread_id, str) or len(thread_id) > 64):
+            raise ApiError(422, "'thread_id' must be a short string")
+        clean = _scrub(message.strip())
+        observe.run_detail("message", clean)
+        verdict = _check_input(clean)
+        if not verdict["allowed"]:
+            observe.set_run(status="blocked", blocked_code=verdict["code"])
+            return chat_service.reply(verdict["message"])
+        state = None
+        if thread_id:
+            try:
+                state = self.get(thread_id, token, client)
+                observe.set_run(thread_id=thread_id)
+                observe.hide(*[m.get("name") for m in state.get("group") or []])
+            except ApiError as e:
+                if e.status != 404:                           # gone, or not yours: carry on without a plan
+                    raise
+
+        def plan(text: str, members: list | None) -> dict:
+            return self.plan(text, members or body.get("group"), token, client)
+
+        def revise(feedback: str) -> dict:
+            return self.approve(thread_id, {"action": "revise", "feedback": feedback}, token, client)
+
+        def ask_ai(shown: dict, question: str) -> str | None:
+            self._begin_run()
+            return chat_service.ai_answer(shown, question, getattr(self.planner.deps, "llm", None))
+
+        out = chat_service.respond(clean, state, plan=plan, revise=revise, ask_ai=ask_ai)
+        observe.run_detail("reply", out.get("reply"))
+        observe.set_run(reply_source=out.get("source"), actions=out.get("actions"))
+        made = (out.get("result") or {}).get("thread_id")
+        if made:
+            observe.set_run(thread_id=made)
+        return out
+
+    @_recorded("voice")
+    def transcribe(self, audio: bytes, content_type: str, token: str | None = None, client: str = "") -> dict:
+        """POST /api/v1/transcribe (the recording as the request body): the words, for the traveller to check."""
+        user = self._user(token)
+        self._limit("voice", user, client)
+        deps = self.planner.deps
+        llm = getattr(deps, "llm", None)
+        try:
+            text = speech_service.transcribe(audio, content_type, env=llm.env if llm else None, store=deps.store,
+                                             transport=self.speech_transport)
+        except speech_service.SpeechError as e:
+            raise ApiError(e.status, e.message)
+        safe = guardrails.scrub(text)
+        if safe != text:
+            observe.event("guardrail", "spoken_sensitive_data", "blocked",
+                          kind=short_code(guardrails.sensitive_kind(text)))
+            raise ApiError(422, "That sounded like a card number, ID number, code or password, so I've discarded "
+                                "the text. Please don't say those here.")
+        return {"text": text}
+
     # ----------------------------------------------------------------- explore
+    @_recorded("explore")
     def explore(self, body: dict | None, token: str | None = None, client: str = "") -> dict:
         """POST /api/v1/explore {"place": ...}: the place and its top sights, with pictures. Nothing is saved."""
         user = self._user(token)
@@ -192,7 +341,9 @@ class PlannerService:
         place = body.get("place") if isinstance(body, dict) else None
         if not isinstance(place, str) or not place.strip() or len(place) > 80:
             raise ApiError(422, "Type a city, town or place name (up to 80 characters).")
-        verdict = guardrails.check_input(guardrails.scrub(place.strip()), require_topic=False)
+        safe = _scrub(place.strip())
+        observe.run_detail("place", safe)
+        verdict = _check_input(safe)
         if not verdict["allowed"]:
             raise ApiError(422, verdict["message"])
         try:
@@ -200,6 +351,7 @@ class PlannerService:
         except ToolError as e:
             raise ApiError(502 if e.retryable else 422, str(e))
 
+    @_recorded("photos")
     def photos(self, body: dict | None, token: str | None = None, client: str = "") -> dict:
         """POST /api/v1/photos {"thread_id": ...}: which article shows each sight of a saved plan. Only reads."""
         user = self._user(token)
@@ -211,9 +363,11 @@ class PlannerService:
         state = self.planner.get(thread_id)
         if state is None:
             raise ApiError(404, f"unknown thread '{thread_id}'")
+        observe.set_run(thread_id=thread_id)
         return plan_photos(state, self.planner.deps)
 
     # ------------------------------------------------------------ cancellation
+    @_recorded("cancel")
     def cancel_booking(self, thread_id: str, body: dict, token: str | None = None, client: str = "") -> dict:
         """Two steps: without ``confirm`` it only shows what cancelling would refund; the traveller must then
         send ``confirm: true``. Cancelling twice returns the same cancellation."""
@@ -225,6 +379,7 @@ class PlannerService:
         state = self.planner.get(thread_id)
         if state is None:
             raise ApiError(404, f"unknown thread '{thread_id}'")
+        observe.set_run(thread_id=thread_id, confirmed=body.get("confirm") is True)
         deps = self.planner.deps
         key = (state.get("booking") or {}).get("idempotency_key")
         record = deps.store.get_booking(key) if key else None
@@ -383,7 +538,12 @@ class PlannerService:
             if route == ("DELETE", "me"):
                 if body.get("confirm") is not True:
                     raise ApiError(422, "Send confirm: true to delete the account and its data.")
-                self.accounts.delete_user(uid, self.planner.delete)
+                def delete_trip(thread_id: str) -> None:
+                    self.planner.delete(thread_id)
+                    self._forget_records(thread_id=thread_id)
+
+                self.accounts.delete_user(uid, delete_trip)
+                self._forget_records(owner=uid)
                 self._metrics.clear()
                 return {"ok": True}
             if route == ("GET", "trips"):
@@ -395,8 +555,11 @@ class PlannerService:
     def health(self) -> dict:
         llm = getattr(self.planner.deps, "llm", None)
         providers = {r: [p["name"] for p in llm.chain(r)] for r in config.LLM_ROUTING} if llm else {}
-        return {"status": "ok", "engine": self.engine, "tools_mode": config.tools_mode(),
+        return {"status": "ok", "voice_input": speech_service.available(llm.env if llm else None),
+                "engine": self.engine, "tools_mode": config.tools_mode(),
                 "real_data": config.real_data_enabled(), "llm_providers": providers,
                 "llm_stats": llm.summary() if llm else {}, "auth_required": self.require_auth,
+                "recording": "off" if self.recorder is None else
+                             "detailed" if self.recorder.details else "basic",
                 "rate_limited": self.limiter is not None,
                 "mode": "llm-assisted" if any(providers.values()) else "rule-based (no API keys set)"}

@@ -23,6 +23,7 @@ from app.core import cache, config
 from app.integrations import google_flights_url as gflights
 from app.integrations.google_flights import economy_with_price, parse_google_flights
 from app.integrations.google_hotels import parse_google_hotels, stay_label
+from app.observability import recorder as observe
 
 TAVILY_EXTRACT = "https://api.tavily.com/extract"
 FX_URL = "https://api.frankfurter.dev/v2/rate/{code}/INR"
@@ -101,7 +102,7 @@ def _usage_key() -> str:
 
 
 def credits_used_today() -> int:
-    used = cache.get(_usage_key(), ttl=2 * 24 * 3600)
+    used = cache.get(_usage_key(), ttl=2 * 24 * 3600, record=False)          # a counter, not a looked-up page
     return int(used) if isinstance(used, (int, float)) else 0
 
 
@@ -114,6 +115,7 @@ def _reserve(credits: int = CREDITS_PER_PAGE) -> None:
         cache.put(_usage_key(), used + credits)
 
 
+@observe.retrieval("live_prices.page", count=lambda result: 1)
 def get_page(url: str, ok, attempts: int = 2) -> tuple[str, str, bool]:
     """(text, fetched_at, from_cache) of a page for which ``ok(text)`` is true. A page that loads without results
     (Google sometimes answers with an empty shell) is retried once and is never cached."""
@@ -125,6 +127,8 @@ def get_page(url: str, ok, attempts: int = 2) -> tuple[str, str, bool]:
             return hit["text"], hit.get("fetched_at", ""), True
     for _ in range(max(1, attempts)):
         _reserve()
+        observe.current_span().add("page_reads")
+        observe.current_span().add("credits", CREDITS_PER_PAGE)
         text = _read_page(url)
         if ok(text):
             fetched = _now()
@@ -134,6 +138,7 @@ def get_page(url: str, ok, attempts: int = 2) -> tuple[str, str, bool]:
     raise LiveUnavailable("the Google page came back without any results")
 
 
+@observe.retrieval("live_prices.exchange_rate", count=lambda result: 1)
 def rate_to_inr(code: str) -> tuple[float, str]:
     """(rupees per 1 unit of ``code``, the rate's date). Cached for 12 hours."""
     code = code.upper()

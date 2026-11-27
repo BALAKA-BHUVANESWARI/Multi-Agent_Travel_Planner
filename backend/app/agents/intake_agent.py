@@ -22,6 +22,7 @@ from app.services import group_service as group_mod
 from app.services import request_parser as intake_mod
 from app.tools.client import call_with_retry
 from app.tools.errors import ToolError
+from app.observability import recorder as observe
 
 _INTAKE_SCHEMA = {
     "type": "object",
@@ -52,6 +53,7 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
         v = obj.get(role)
         if role == "destination" and isinstance(v, str) and _WANTS_IDEAS.search(text) \
                 and v.strip().lower() not in text.lower():
+            observe.event("guardrail", "ai_invented_destination", "rejected", detail=v)
             continue                        # asked for ideas and never named it: offer suggestions instead
         if c[role] is None and isinstance(v, str) and _PLACE_TEXT.match(v.strip()):
             if role not in texts:

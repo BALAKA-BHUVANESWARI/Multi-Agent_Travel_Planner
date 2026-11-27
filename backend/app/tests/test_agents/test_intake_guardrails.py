@@ -45,9 +45,20 @@ def test_days(text, days):
 @pytest.mark.parametrize("text,month,day", [
     ("in December", 12, None), ("on 15 december", 12, 15), ("may 15th", 5, 15), ("I may go in may", 5, None),
     ("budget 60000 december", 12, None), ("no month here", None, None),
+    ("from 28 december 2026 for 2 people", 12, 28), ("starting 28 Dec 2026", 12, 28), ("on 3rd of may 2027", 5, 3),
+    ("from December 28, 2026", 12, 28), ("starting december 28 for 3 days", 12, 28),
+    ("in December 5 days", 12, None), ("in december 2 people", 12, None), ("in december 2026", 12, None),
+    ("in December 30k budget", 12, None), ("in december 3-day trip", 12, None),
 ])
 def test_month(text, month, day):
     assert parse_month(text) == (month, day)
+
+
+def test_the_date_the_traveller_typed_is_the_one_planned():
+    typed = parse_request("3 days goa trip from bangalore with 30000 budget from 28 december 2026 for 2 people", T)
+    assert typed["constraints"]["start_date"] == "2026-12-28"
+    assert parse_request("3 days in Goa from Delhi from 31 December, budget 60k", T)["constraints"]["start_date"] \
+        .endswith("-12-31")
 
 
 @pytest.mark.parametrize("text,n", [

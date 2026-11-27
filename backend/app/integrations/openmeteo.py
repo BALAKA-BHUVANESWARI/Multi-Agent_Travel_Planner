@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from typing import Callable
 
 from app.core import config
+from app.observability import recorder as observe
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -41,6 +42,7 @@ def _day(d: date, tmax, tmin, prob) -> dict:
             "precip_prob": prob, "rainy": prob >= config.RAIN_THRESHOLD}
 
 
+@observe.retrieval("open-meteo.forecast")
 def forecast(lat: float, lon: float, start: date, days: int, fetch: Callable = fetch_json,
              timezone: str = "Asia/Kolkata") -> list[dict]:
     end = start + timedelta(days=days - 1)
@@ -66,6 +68,7 @@ def _shift_years(d: date, years: int) -> date:
         return d.replace(year=d.year - years, day=28)
 
 
+@observe.retrieval("open-meteo.climate_history")
 def climate(lat: float, lon: float, start: date, days: int, years: int = 3,
             fetch: Callable = fetch_json, timezone: str = "Asia/Kolkata") -> list[dict]:
     """Rain probability = share of rainy (>=1 mm) days in a +/-3 day window over past years."""

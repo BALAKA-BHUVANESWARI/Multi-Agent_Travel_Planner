@@ -14,6 +14,7 @@ import time
 from typing import Callable
 
 from app.core import config
+from app.observability import recorder as observe
 from app.tools.errors import ToolError
 from app.tools.registry import TOOLS
 
@@ -145,7 +146,13 @@ def call_with_retry(client, name: str, retries: int | None = None, backoff: floa
     last: ToolError | None = None
     for attempt in range(retries):
         try:
-            return client.call(name, **kwargs)
+            with observe.span("tool", name, attempt=attempt + 1) as step:
+                try:
+                    return client.call(name, **kwargs)
+                except ToolError as e:
+                    step.fail("not_possible" if e.not_possible else "error", retryable=e.retryable)
+                    step.detail("error", str(e))
+                    raise
         except ToolError as e:
             last = e
             if not e.retryable or attempt == retries - 1:

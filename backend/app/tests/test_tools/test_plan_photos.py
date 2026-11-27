@@ -41,6 +41,14 @@ def test_a_long_plan_is_looked_up_in_batches(make, monkeypatch):
     assert r["attribution"] == [wikipedia.ATTRIBUTION]
 
 
+def test_the_destination_article_is_confirmed_even_with_no_named_sights(make, monkeypatch):
+    monkeypatch.setenv("REAL_DATA", "1")
+    monkeypatch.setattr(wikipedia, "article_info", lambda titles, fetch=None: {
+        "Paris": {"title": "Paris", "lat": 48.8567, "lon": 2.3522, "image": True}})
+    r = plan_photos(state_with(activity("gen-walk", "Old town and city-centre walking tour")), make().deps)
+    assert r["place"] == "Paris" and r["photos"] == {} and r["checked"] is True
+
+
 def test_a_longer_plan_name_matches_only_an_article_on_the_same_spot(monkeypatch):
     monkeypatch.setenv("REAL_DATA", "1")
     pages = {"Fort Aguada": {"title": "Fort Aguada", "lat": 15.492, "lon": 73.774, "image": True}}
@@ -56,7 +64,7 @@ def test_a_longer_plan_name_matches_only_an_article_on_the_same_spot(monkeypatch
 
 def test_offline_or_failing_lookup_says_not_checked(make):
     state = state_with(activity("wp-1", "Notre-Dame de Paris"))
-    assert plan_photos(state, make().deps) == {"photos": {}, "checked": False, "attribution": []}
+    assert plan_photos(state, make().deps) == {"photos": {}, "place": None, "checked": False, "attribution": []}
     down = make(tools=InProcessClient(failures={"find_place_photos": -1})).deps
     assert plan_photos(state, down)["checked"] is False
 
@@ -65,7 +73,7 @@ def test_a_saved_plan_can_be_asked_for_its_photos_without_changing_it(make):
     service = PlannerService(make())
     plan = service.plan(REQ)
     before = service.get(plan["thread_id"])
-    assert set(service.photos({"thread_id": plan["thread_id"]})) == {"photos", "checked", "attribution"}
+    assert set(service.photos({"thread_id": plan["thread_id"]})) == {"photos", "place", "checked", "attribution"}
     assert service.get(plan["thread_id"]) == before
 
 

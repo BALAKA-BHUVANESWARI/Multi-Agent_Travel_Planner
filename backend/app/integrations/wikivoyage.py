@@ -11,6 +11,7 @@ import urllib.request
 from typing import Callable
 
 from app.core.security import sanitize_untrusted
+from app.observability import recorder as observe
 
 API = "https://en.wikivoyage.org/w/api.php"
 ATTRIBUTION = "Travel text from Wikivoyage (CC BY-SA 4.0)"
@@ -45,12 +46,15 @@ def chunk(text: str, max_chars: int = 420, max_chunks: int = 40) -> list[str]:
     return out[:max_chunks]
 
 
+@observe.retrieval("wikivoyage.guide_text")
 def load_chunks(title: str, fetch: Callable[[str], str] = _fetch) -> list[str]:
     if title in _CACHE:
+        observe.note_cache(True, "memory")
         return _CACHE[title]
     try:
         chunks = chunk(fetch(title))
-    except Exception:
+    except Exception as e:
+        observe.problem(e)
         chunks = []
     if chunks:
         _CACHE[title] = chunks
@@ -171,6 +175,7 @@ def parse_listings(wikitext: str, classify: Callable[[str], dict | None]) -> lis
     return out
 
 
+@observe.retrieval("wikivoyage.sights")
 def listings(title: str, fetch: Callable[[str], str] | None = None) -> list[dict]:
     """Named sights from a Wikivoyage page; [] on any failure. Cached in memory and on disk."""
     from app.core import cache
@@ -181,7 +186,8 @@ def listings(title: str, fetch: Callable[[str], str] | None = None) -> list[dict
         return cached
     try:
         found = parse_listings((fetch or _fetch_wikitext)(title), wikipedia.classify_text)
-    except Exception:                                        # noqa: BLE001 - any failure means "no listings"
+    except Exception as e:                                   # noqa: BLE001 - any failure means "no listings"
+        observe.problem(e)
         return []
     if found:
         cache.put(key, found)
@@ -226,7 +232,9 @@ def add_coordinates(elements: list[dict], center: dict, fetch: Callable[[list[st
     found = cache.get(key)
     if found is None:
         try:
-            found = {k: list(v) for k, v in (fetch or _fetch_coords)(names).items()}
+            with observe.span("retrieval", "wikipedia.sight_positions") as step:
+                found = {k: list(v) for k, v in (fetch or _fetch_coords)(names).items()}
+                step.set(asked=len(names), results=len(found))
         except Exception:                                    # noqa: BLE001 - offline or rate limited: keep going
             return elements
         cache.put(key, found)
@@ -292,6 +300,7 @@ def district_titles(title: str, wikitext: str) -> list[str]:
     return out[:MAX_DISTRICTS]
 
 
+@observe.retrieval("wikivoyage.restaurants")
 def eat_listings(title: str, fetch: Callable[[str], str] | None = None) -> list[dict]:
     """Restaurants from a Wikivoyage page's Eat section (for a big city split into districts: from its first
     district pages); [] on any failure. Cached on disk (30 days)."""
@@ -310,7 +319,8 @@ def eat_listings(title: str, fetch: Callable[[str], str] | None = None) -> list[
             subs = district_titles(title, text)
             if subs:
                 with ThreadPoolExecutor(max_workers=len(subs)) as pool:
-                    pages = list(pool.map(lambda t: _safe_text(get, t), subs))
+                    reads = [pool.submit(observe.carry(_safe_text), get, t) for t in subs]
+                    pages = [r.result() for r in reads]
                 seen = set()
                 for page in pages:
                     for el in parse_eat_listings(page):
@@ -320,7 +330,8 @@ def eat_listings(title: str, fetch: Callable[[str], str] | None = None) -> list[
                             el["id"] = len(found) + 1
                             found.append(el)
                 found = found[:MAX_LISTINGS]
-    except Exception:                                        # noqa: BLE001 - any failure means "no listings"
+    except Exception as e:                                   # noqa: BLE001 - any failure means "no listings"
+        observe.problem(e)
         return []
     if found:
         cache.put(key, found)
@@ -331,6 +342,7 @@ def _safe_text(get: Callable[[str], str], title: str) -> str:
     try:
         return get(title)
     except Exception:                                        # noqa: BLE001 - one bad district page is fine
+        observe.current_span().add("failed_pages")
         return ""
 
 

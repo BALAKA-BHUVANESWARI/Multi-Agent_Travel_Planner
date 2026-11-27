@@ -5,6 +5,7 @@ from app.core import config
 from app.core.utils import fmt_inr
 from app.graph.state import entry
 from app.services import plan_checks as checks
+from app.observability import recorder as observe
 
 
 def critic_node(state: dict, deps) -> dict:
@@ -26,5 +27,8 @@ def critic_node(state: dict, deps) -> dict:
                                                  else " after the automatic retries."))
     if br["incomplete"]:
         new_warnings.append(f"Partial plan: {', '.join(br['incomplete'])} unavailable; totals understate the cost.")
+    observe.event("guardrail", "critic_checks",
+                  "blocking" if blocking else ("warnings" if issues else "ok"),
+                  blocking=len(blocking), warnings=len(issues) - len(blocking), codes=[i["code"] for i in issues])
     return {"critic_issues": issues, "replan_reason": replan, "warnings": new_warnings,
             "log": [entry("critic", f"{len(blocking)} blocking, {len(issues) - len(blocking)} warning issue(s)")]}

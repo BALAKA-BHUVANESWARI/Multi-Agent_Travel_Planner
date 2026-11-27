@@ -6,6 +6,7 @@ import math
 from app.core import config
 from app.core.utils import hash01, round_to
 from app.integrations import live_prices as live
+from app.observability import recorder as observe
 from app.tools.common import destination_info, parse_date, season_factor
 from app.tools.errors import ToolError
 
@@ -36,8 +37,10 @@ def search_hotels(destination: str, checkin: str, nights: int, travelers: int,
         try:
             result.update(live.hotels(d["name"], ci, nights))
         except live.LiveUnavailable as e:
+            observe.event("retrieval", "live_prices.hotels", "fallback", detail=str(e))
             result["live_note"] = f"Live hotel prices were unavailable ({e}); the hotel price is an estimate."
         except Exception as e:                                       # noqa: BLE001 - never let this break a plan
+            observe.event("retrieval", "live_prices.hotels", "fallback", error=type(e).__name__)
             result["live_note"] = (f"Live hotel prices were unavailable ({type(e).__name__}); the hotel price is "
                                    "an estimate.")
     return result

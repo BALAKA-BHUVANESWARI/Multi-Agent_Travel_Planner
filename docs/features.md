@@ -98,7 +98,7 @@ Endpoints: `POST /api/v1/booking/{thread_id}/cancel` (`{"confirm": true}`), `POS
 
 Settings (all optional): `AUTH_REQUIRED=1` stops guests from planning; `RATE_LIMIT=0` turns limits off;
 `RATE_LIMIT_PLAN_PER_MINUTE`, `RATE_LIMIT_PLAN_PER_DAY`, `RATE_LIMIT_ACTIONS_PER_MINUTE`,
-`RATE_LIMIT_AUTH_PER_MINUTE`, `RATE_LIMIT_READS_PER_MINUTE` change them.
+`RATE_LIMIT_AUTH_PER_MINUTE`, `RATE_LIMIT_READS_PER_MINUTE`, `RATE_LIMIT_VOICE_PER_MINUTE` change them.
 
 **Agent names in the code** (`backend/app/agents/`): `destination_agent.py` resolves and suggests places,
 `activity_agent.py` finds sights, tips and restaurants, and `itinerary_agent.py` builds the days (the `merge` node)
@@ -144,15 +144,46 @@ Endpoint: `POST /api/v1/explore` with `{"place": "Prague"}`. MCP tool added: `fi
 ## Photos in the day-by-day plan
 
 * Each named sight shows up to four thumbnails. **View all photos** opens a gallery with up to 24, with captions,
-  arrow keys, and a link to each photo's author and licence. Flexible suggestions (for example "Dinner at a local
-  restaurant") are not one place, so they get no photos.
+  arrow keys, and a link to each photo's author and licence.
+* Flexible suggestions (dinner, café time, market stroll and so on) are not one place. They get up to eight example
+  photos, labelled as examples, and a map search for real places of that kind at the destination. Dinner uses the
+  country's cuisine article; the walking tour uses the destination's article, confirmed by its location; the others
+  use a general article, so their pictures come from around the world.
 * Photos come from the sight's Wikipedia article, and only when the article's location matches the sight. Maps,
-  plans, logos and non-JPEG files are left out; old views and pictures of fires or repairs are listed last. This
+  plans, logos and non-JPEG files are left out; old views, pictures of events and people, and pictures of fires or
+  repairs are listed last. This
   filter works on file names and captions, so a few drawings or paintings can still appear.
 * How many photos there are depends on the article. Every sight also has **More images on Google** and **Google
   Maps** links, which work when no photo could be confirmed. Those open Google with the place name.
 * The server only confirms which article to use (`POST /api/v1/photos` with `{"thread_id": "..."}`; it reads the saved
   plan and changes nothing). The photos are loaded by the visitor's browser.
+
+## Chatbot with voice input
+
+The **Chat** button (bottom right) opens a chat that uses the same planner as the form.
+
+* **Plan:** type, for example, "3 days in Goa from Delhi, budget 30000". If something is missing (starting city,
+  budget, way of travelling) it asks, and your short reply is added to the earlier request. "start over" drops it.
+* **Change:** "make it cheaper", "make it 4 days", "add 1 person", "go by train". These use the same change rules and
+  the same limit of 2 changes as the page.
+* **Ask:** cost, travel, hotel, weather, food, warnings, booking status or "show day 2" are answered by rules from the
+  saved plan. Only a question no rule covers goes to an AI model (Groq, then Gemini, then Ollama). It is given the plan
+  but no group names or saved preferences, and its answer is marked as an AI answer. It can be wrong.
+* **Never from the chat:** approving, booking and cancelling. Those are only the buttons, so a misheard word cannot
+  book anything. Visa and entry questions and emergency questions get fixed replies without any AI model: the app
+  never says whether a visa is needed, and emergency numbers come only from "Emergency help".
+* **Voice:** press **Speak**, then **Stop** (at most one minute). The recording goes to Groq's Whisper model, the
+  words appear in the text box, and nothing is sent until you press **Send**. It needs `GROQ_API_KEY`, works in
+  English for now, and uses the microphone only while recording. Browsers allow the microphone on `localhost` or HTTPS.
+* **Privacy:** the app does not save recordings, and chat messages stay only on the screen. The audio itself goes to
+  Groq, and no text check can remove something sensitive from audio before it is sent, so don't say card or ID numbers
+  or passwords. If the returned text contains one, it is discarded.
+* **If voice is refused:** the message says whether Groq rejected the key (401), blocked the voice model in your
+  organization or project settings, or refused for another reason. The server window prints Groq's reason, without
+  the key. While the page itself is planning, the chat says so and waits; options from before a change on the page are
+  removed.
+* **Limits:** `VOICE_DAILY_LIMIT` (default 100 recordings a day) and 10 recordings a minute. Check your Groq account's
+  free limits.
 
 ## Control flow in numbers
 
@@ -196,14 +227,85 @@ approximate when requests overlap. Langfuse is not used: it would add an account
 On Windows, double-click `scripts\run_tests.bat` for the tests and `scripts\run_evals.bat` for the evals including the LLM judge
 (the judge needs your keys in `.env`; it makes about one free-tier call per prompt that states preferences).
 
+## Records for the evaluation dashboard
+
+Each plan, approval, chat message, voice recording, destination search, photo lookup and booking cancellation is
+recorded in `.runtime/observability.db`, on this computer only. A record holds the steps of the request as a tree:
+agents, tool calls (with each retry), data lookups (found, empty, error, timeout, skipped or cached), AI calls
+(provider, model, retries, fallback, tokens as reported by the provider or estimated) and safety decisions. The
+metrics dashboard below shows them. They can also be printed from the `backend` folder:
+
+```
+python -m app.observability            latest requests, and the steps of the newest one
+python -m app.observability 3          the steps of the third request in the list
+python -m app.observability 3 --text   with the detailed text, if it was kept
+```
+
+| Setting in `.env` | Default | Meaning |
+| --- | --- | --- |
+| `OBSERVABILITY` | 1 | 0 stops recording |
+| `RECORD_DETAILS` | 0 | 1 also keeps typed requests, AI prompts and replies, retrieved text and error messages |
+| `RECORD_KEEP_DAYS` | 30 | records older than this are deleted (at most 5,000 requests are kept) |
+| `RECORD_DETAIL_KEEP_DAYS` | 7 | detailed text is deleted sooner |
+
+* **Basic records** hold names, times, counts and result codes. They hold no typed text, place names, AI replies or
+  error messages.
+* **Detailed records** are cleaned first: API keys, email addresses, group members' names and the saved home city are
+  hidden, and text that looks like a card or ID number, code or password is withheld. Prompts that carry saved
+  preferences are not kept. Cleaning works by pattern, so it cannot recognise every personal detail someone types
+  (a street address, or a name that is not in the group list). Switch it on only when you need it.
+* **Never recorded:** keys, sign-in tokens, passwords, audio and transcripts, emergency and trip toolkit requests,
+  and the text of chat messages about an emergency.
+* Deleting an account also deletes its records. Recording problems never stop or change a plan.
+* With `TOOLS_MODE=mcp`, tool calls are recorded but the data lookups inside the tool server are not.
+
+## Metrics dashboard
+
+A separate page at `http://127.0.0.1:8000/dashboard`, with its own menu, for the person who runs the app. It is off
+until `.env` has these two lines (then restart the server):
+
+```
+DASHBOARD=1
+DASHBOARD_PASSWORD=choose-your-own-password
+```
+
+The password needs at least 8 characters. Signing in lasts until the browser tab is closed, 12 hours pass, the server
+restarts or the password changes. Wrong guesses are limited (5 a minute). The dashboard only reads: it cannot change a
+plan or a record, and looking at it is not recorded.
+
+| Tab | What it shows |
+| --- | --- |
+| Overview | requests by result, median / p90 / slowest time of a full plan, replans, changes, mock bookings, failed steps, today's use of the app's own daily limits, and the latest offline test scores |
+| Agents | runs, success rate, times, retries and errors of each agent, with the tool calls, AI calls and lookups made inside it |
+| AI models | every call (job, provider, model, time, result and error code, retries, backup provider, saved answer, tokens), with totals by job and by model; chat and voice included |
+| Traces | one request as a timeline, parallel agents side by side, with linked requests (changes, approval, chat) |
+| Retrieval | each data source (found, found nothing, failed, timed out, skipped, from cache, times), fallbacks, and which sources' places reached finished plans |
+| Logs | every step, warning and error, with search and filters; each line opens its request's timeline |
+
+Filters: period or dates, request type, result, agent, AI model, and request or trip id. Refresh, optional refresh
+every 15 seconds, and CSV or JSON download of what the filters show (the file stays on your computer; cells that a
+spreadsheet could run as a formula are written as text).
+
+How to read it:
+
+* Plan times count only plans that reached "awaiting approval". A figure made from fewer than 5 values is marked.
+* A "not possible" tool answer (no train across the sea) is not an error, and a lookup that found nothing is not
+  counted as failed.
+* Daily limits are what this app counted today against its own settings. Providers have their own limits, and the app
+  cannot see a bill.
+* Test scores come from `backend/evals/report.md`, so they change only when `python evals/run_evals.py` is run again.
+* With the most records it keeps (5,000 requests), a tab can take a few seconds to load.
+* Safety checks appear in Traces and Logs. Separate tabs for safety checks, made-up facts and evaluations are not
+  built yet.
+
 ## Known limitations
 
 - **Accounts are for local or demo use.** Passwords and session tokens are stored hashed, but there is no email
   verification or password reset, and the app does not provide HTTPS. Add HTTPS before putting it online. Guest
   trips can be opened by anyone who has the trip id. A trip planned as a guest and then approved while signed in is
   added to that account.
-- Deleting an account removes the user, sessions, saved preferences, saved trips and mock booking records. It does not
-  clear cached AI-model replies or the local trace log.
+- Deleting an account removes the user, sessions, saved preferences, saved trips, mock booking records and the
+  account's dashboard records. It does not clear cached AI-model replies or the local trace log.
 - Rate-limit counts are kept in memory: they reset on restart and are not shared between server processes.
 - Suggestion tags, best months and map positions of curated landmarks are rough, hand-entered guidance.
 

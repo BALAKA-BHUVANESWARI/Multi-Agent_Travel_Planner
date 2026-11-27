@@ -113,7 +113,7 @@ def border_warning(mode: str, straight_km: float, o_cc: str | None, d_cc: str | 
 def _check(mode: str, straight_km: float, countries: tuple) -> tuple[float, float]:
     why = overland_block(mode, straight_km, *countries)
     if why:
-        raise ToolError(why, retryable=False)
+        raise ToolError(why, retryable=False, not_possible=True)
     km = road_km(straight_km)
     return km, duration_hours(mode, km)
 

@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from app.core import config
+from app.observability import recorder as observe
 
 TTL_SECONDS = 30 * 24 * 3600
 
@@ -26,13 +27,17 @@ def _file(key: str) -> Path:
     return cache_dir() / (hashlib.sha256(key.encode()).hexdigest()[:32] + ".json")
 
 
-def get(key: str, ttl: float = TTL_SECONDS):
+def get(key: str, ttl: float = TTL_SECONDS, record: bool = True):
     try:
         data = json.loads(_file(key).read_text(encoding="utf-8"))
         if time.time() - float(data["saved"]) <= ttl and data.get("key") == key:
+            if record:
+                observe.note_cache(True)
             return data["value"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
+    if record:
+        observe.note_cache(False)
     return None
 
 

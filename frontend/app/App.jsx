@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import PreferencesPanel from "../components/account/PreferencesPanel.jsx";
 import SignInPanel from "../components/account/SignInPanel.jsx";
 import TripsPanel from "../components/account/TripsPanel.jsx";
+import ChatWidget from "../components/chat/ChatWidget.jsx";
 import ErrorBoundary from "../components/common/ErrorBoundary.jsx";
 import AgentPipeline, { pipelineState } from "../components/dashboard/AgentPipeline.jsx";
 import DashboardCards from "../components/dashboard/DashboardCards.jsx";
@@ -91,6 +92,21 @@ export default function App() {
     }
   };
 
+  // a plan made or changed in the chat is shown on the page like any other
+  const showFromChat = (answer) => {
+    openPage("home");
+    setNav("home");
+    planner.lastRequest.current = answer.request || planner.lastRequest.current;
+    planner.show(answer);
+    scrollTo("msg");
+  };
+  const showFromChatLink = (id, before) => () => {
+    openPage("home");
+    setNav("home");
+    before?.();
+    scrollTo(id);
+  };
+
   const result = planner.result;
   const tripName = result && !NO_PLAN_STATUSES.includes(result.status)
     ? placeName(result.constraints, "destination") : "";
@@ -156,6 +172,12 @@ export default function App() {
 
         <Footer health={account.health} />
       </main>
+
+      {/* signing in or out starts a new chat, so one traveller never sees another's messages */}
+      <ChatWidget key={account.user?.id || "guest"} result={result} busy={planner.busy}
+        voice={account.health?.voice_input} readMembers={group.read} onResult={showFromChat} onClear={planner.clear}
+        onShowPlan={showFromChatLink("msg")}
+        onEmergency={showFromChatLink("sos", () => setEmergencyOpen(true))} />
     </div>
   );
 }

@@ -16,6 +16,9 @@ NOT_BUILT = b"""<!doctype html><meta charset="utf-8"><title>ExecuTrip: Wish-to-W
 npm run build</pre></body>"""
 
 
+PAGES = ("index.html", "metrics.html")          # the planner, and the evaluation dashboard at /dashboard
+
+
 def dist_dir() -> Path:
     override = os.environ.get("FRONTEND_DIST")
     return Path(override) if override else config.PROJECT_ROOT / "frontend" / "dist"
@@ -31,4 +34,4 @@ def asset(name: str) -> tuple[bytes, str] | None:
     path = dist_dir() / name
     if path.is_file():
         return path.read_bytes(), ctype
-    return (NOT_BUILT, "text/html") if name == "index.html" else None
+    return (NOT_BUILT, "text/html") if name in PAGES else None

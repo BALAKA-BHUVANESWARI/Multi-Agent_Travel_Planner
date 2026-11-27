@@ -13,6 +13,7 @@ from typing import Callable
 
 from app.core import cache
 from app.core.security import sanitize_untrusted
+from app.observability import recorder as observe
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_MIRRORS = [OVERPASS_URL, "https://overpass.kumi.systems/api/interpreter",
@@ -40,6 +41,7 @@ def _post_with_mirrors(query: str, timeout: float = MIRROR_TIMEOUT, budget: floa
         if left <= 1:
             break
         try:
+            observe.current_span().add("server_attempts")
             data = urllib.parse.urlencode({"data": query}).encode()
             req = urllib.request.Request(url, data=data, headers={"User-Agent": "travel-planner-demo/1.0"})
             with urllib.request.urlopen(req, timeout=min(timeout, left)) as r:      # noqa: S310
@@ -66,11 +68,13 @@ def places_query(lat: float, lon: float, radius_m: int) -> str:
             ");out tags center 400;")
 
 
+@observe.retrieval("openstreetmap.places")
 def place_elements(lat: float, lon: float, radius_m: int, post: Callable[[str], dict] | None = None) -> list[dict]:
     """Raw OSM elements (tags + centre) for notable places around a point.
     Cached in memory and on disk (30 days). Any failure returns [] so the caller can use other sources."""
     key = (round(lat, 2), round(lon, 2), radius_m)
     if key in _PLACES_CACHE:
+        observe.note_cache(True, "memory")
         return _PLACES_CACHE[key]
     disk_key = f"osm:{key[0]},{key[1]},{radius_m}"
     cached = cache.get(disk_key)
@@ -78,10 +82,12 @@ def place_elements(lat: float, lon: float, radius_m: int, post: Callable[[str], 
         _PLACES_CACHE[key] = cached
         return cached
     if time.monotonic() - _FAILED.get(key, -1e9) < FAILURE_MEMORY:
+        observe.current_span().fail("skipped", reason="failed_recently")
         return []
     try:
         elements = (post or _post_with_mirrors)(places_query(lat, lon, radius_m)).get("elements", [])
-    except Exception:
+    except Exception as e:
+        observe.problem(e)
         _FAILED[key] = time.monotonic()
         return []
     if elements:
@@ -90,6 +96,7 @@ def place_elements(lat: float, lon: float, radius_m: int, post: Callable[[str], 
     return elements
 
 
+@observe.retrieval("openstreetmap.nearby")
 def nearby(lat: float, lon: float, radius_m: int = 8000, limit: int = 8,
            post: Callable[[str], dict] = _post) -> list[dict]:
     q = (f'[out:json][timeout:8];(node(around:{radius_m},{lat},{lon})["tourism"~"attraction|museum|viewpoint"]'
@@ -97,7 +104,8 @@ def nearby(lat: float, lon: float, radius_m: int = 8000, limit: int = 8,
          f"out center {limit * 3};")
     try:
         data = post(q)
-    except Exception:
+    except Exception as e:
+        observe.problem(e)
         return []
     seen, out = set(), []
     for el in data.get("elements", []):
@@ -138,10 +146,12 @@ def restaurants_query_relaxed(lat: float, lon: float, radius_m: int) -> str:
             ");out tags center 200;")
 
 
+@observe.retrieval("openstreetmap.restaurants")
 def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[str], dict] | None = None) -> list[dict]:
     """Raw OSM restaurant elements around a point. Cached in memory and on disk (30 days); [] on any failure."""
     key = (round(lat, 2), round(lon, 2), radius_m)
     if key in _RESTAURANTS_CACHE:
+        observe.note_cache(True, "memory")
         return _RESTAURANTS_CACHE[key]
     disk_key = f"osm-restaurants:v1:{key[0]},{key[1]},{radius_m}"
     cached = cache.get(disk_key)
@@ -149,6 +159,7 @@ def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[s
         _RESTAURANTS_CACHE[key] = cached
         return cached
     if time.monotonic() - _FAILED.get(("r",) + key, -1e9) < FAILURE_MEMORY:
+        observe.current_span().fail("skipped", reason="failed_recently")
         return []
     run = post or (lambda q: _post_with_mirrors(q, timeout=60.0, budget=60.0))   # slow but off the critical path
     try:
@@ -157,7 +168,8 @@ def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[s
             more = run(restaurants_query_relaxed(lat, lon, radius_m)).get("elements", [])
             have = {(e.get("type"), e.get("id")) for e in elements}
             elements = elements + [e for e in more if (e.get("type"), e.get("id")) not in have]
-    except Exception:
+    except Exception as e:
+        observe.problem(e)
         _FAILED[("r",) + key] = time.monotonic()
         return []
     if elements:

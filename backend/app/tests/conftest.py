@@ -63,6 +63,9 @@ def _isolated_place_cache(tmp_path, monkeypatch):
     from app.integrations import openstreetmap as osm
     monkeypatch.setenv("TRIP_CACHE_DIR", str(tmp_path / "place_cache"))
     monkeypatch.setenv("TRACE_FILE", str(tmp_path / "traces.jsonl"))
+    monkeypatch.setenv("OBSERVABILITY_DB", str(tmp_path / "observability.db"))
+    for name in ("OBSERVABILITY", "RECORD_DETAILS", "RECORD_KEEP_DAYS", "RECORD_DETAIL_KEEP_DAYS"):
+        monkeypatch.delenv(name, raising=False)
     osm._PLACES_CACHE.clear()
     osm._FAILED.clear()
     yield

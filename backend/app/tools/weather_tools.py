@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from app.core import config
 from app.core.utils import hash01
 from app.integrations import openmeteo
+from app.observability import recorder as observe
 from app.tools.common import destination_info, parse_date
 
 
@@ -38,7 +39,7 @@ def get_weather(destination: str, start_date: str, days: int, today: str,
                     else "historical climate (last 3 years)"), "estimated": mode == "climate",
                     "attribution": openmeteo.ATTRIBUTION, "days": rows}
         except Exception:                      # network / parse failure -> offline estimate
-            pass
+            observe.event("retrieval", "weather.offline_estimate", "fallback")
     note = ("Offline estimate from curated monthly climate averages" if not d.get("dynamic")
             else "Rough offline estimate from latitude and month (live weather was unreachable)")
     return {"mode": mode, "source": "offline climate estimate", "estimated": True, "offline_fallback": True,

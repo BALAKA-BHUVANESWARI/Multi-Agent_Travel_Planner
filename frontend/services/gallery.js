@@ -1,5 +1,5 @@
 // Many photos of one place: the pictures in its Wikipedia article, in the article's order, loaded by the visitor's
-// browser. Maps, plans, logos and drawings are left out. Old views and pictures of fires or repair work go last,
+// browser. Maps, plans, logos and drawings are left out. Old views, events, people and pictures of fires or repair work go last,
 // because a traveller wants to see what the place looks like. Every photo links to its file page (author, licence).
 import { filePage, isPicture } from "./photos.js";
 
@@ -8,8 +8,13 @@ export const MAX_PHOTOS = 24;
 const AT_ONCE = 4;
 
 const NOT_PHOTO = new RegExp("(^|[^a-z])(logo|flag|map|maps|plan|plans|locator|coat of arms|blason|diagram|section|" +
-  "coupe|signature|icon|engraving|etching|painting|drawing|lithograph|gravure|dessin|sketch|portrait|model)([^a-z]|$)");
-const LESS_USEFUL = /(^|[^a-z])(fire|burning|flames|feu|incendie|damage|damaged|scaffold|scaffolding)([^a-z]|$)/;
+  "coupe|signature|icon|engraving|etching|painting|drawing|lithograph|gravure|dessin|sketch|portrait|portret|" +
+  "poster|model|google art project|wga\\d+|sk [a-c] \\d+|rp p)([^a-z]|$)");
+// map files are often named in the local language, joined to another word ("positiekaart", "stadtkarte")
+const MAP_NAME = /(kaart|stadtkarte|lagekarte|location ?map|mapa([^a-z]|$))/;
+// events, people and archive pictures say little about what the place looks like
+const LESS_USEFUL = new RegExp("(^|[^a-z])(fire|burning|flames|feu|incendie|damage|damaged|scaffold|scaffolding|" +
+  "state visit|president|queen|king|prince|princess|minister|bestanddeelnr|eye fot)([^a-z]|$)");
 const OLD_YEAR = /(^|[^0-9])(1[0-8]\d\d|19[0-6]\d)([^0-9]|$)/;
 const NEW_YEAR = /(19[7-9]\d|20\d\d)/;
 
@@ -21,7 +26,7 @@ function toPhoto(entry) {
   const file = String(entry.title || "").replace(/^File:/, "");
   const caption = String(entry.caption?.text || "").trim();
   const words = `${file.replace(/\.jpe?g$/i, "")} ${caption}`.replace(/_/g, " ").toLowerCase();
-  if (NOT_PHOTO.test(words)) return null;
+  if (NOT_PHOTO.test(words) || MAP_NAME.test(words)) return null;
   // Wikimedia serves only some widths: 500 and 1280 are among them. A picture narrower than 1280 has no copy that
   // size, so the viewer falls back to the 500 one.
   const sized = (width) => url.href.replace(/\/\d+px-/, `/${width}px-`);
@@ -76,4 +81,13 @@ export function findGallery(article) {
     answer.then((photos) => photos || known.delete(article));
   }
   return known.get(article);
+}
+
+// the photos of the first of these articles that has any
+export async function findFirstGallery(articles) {
+  for (const article of articles) {
+    const photos = await findGallery(article);
+    if (photos?.length) return photos;
+  }
+  return [];
 }

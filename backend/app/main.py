@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from app.api import frontend
-from app.api.v1 import auth, explore, health, toolkit, trips
+from app.api.v1 import auth, chat, dashboard, explore, health, toolkit, trips
 from app.core import config
 from app.core.rate_limit import RateLimiter
 from app.graph.engine import make_planner
@@ -31,7 +31,7 @@ def create_app(service: PlannerService | None = None) -> FastAPI:
         headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
         return JSONResponse(status_code=exc.status, content={"error": exc.message}, headers=headers)
 
-    for module in (health, trips, explore, toolkit, auth):
+    for module in (health, trips, explore, chat, toolkit, auth, dashboard):
         app.include_router(module.create_router(service), prefix=API_PREFIX)
 
     def serve_asset(name: str) -> Response:
@@ -43,6 +43,11 @@ def create_app(service: PlannerService | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index():
         return serve_asset("index.html")
+
+    @app.get("/dashboard", include_in_schema=False)
+    @app.get("/dashboard/", include_in_schema=False)
+    def dashboard_page():
+        return serve_asset("metrics.html")
 
     @app.get("/{name}", include_in_schema=False)
     def built_file(name: str):

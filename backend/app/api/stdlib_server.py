@@ -8,9 +8,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from urllib.parse import parse_qsl, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.api import frontend
+from app.services.dashboard_service import DashboardService
+from app.services.speech_service import MAX_AUDIO_BYTES
 from app.services.trip_service import ApiError, PlannerService
 
 MAX_BODY_BYTES = 64 * 1024
@@ -18,11 +21,13 @@ API_PREFIX = "/api/v1"
 
 
 def make_handler(service: PlannerService):
+    board = DashboardService(service)
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):          # quiet
             pass
 
-        def _send(self, status: int, payload, ctype="application/json", retry_after=None):
+        def _send(self, status: int, payload, ctype="application/json", retry_after=None, headers=None):
             body = payload if isinstance(payload, bytes) else json.dumps(payload, default=str).encode()
             self.send_response(status)
             self.send_header("Content-Type", ctype + ("; charset=utf-8" if "text" in ctype or "json" in ctype else ""))
@@ -30,6 +35,8 @@ def make_handler(service: PlannerService):
             self.send_header("X-Content-Type-Options", "nosniff")
             if retry_after:
                 self.send_header("Retry-After", str(retry_after))
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
@@ -46,10 +53,16 @@ def make_handler(service: PlannerService):
             except ValueError:
                 raise ApiError(400, "invalid JSON")
 
+        def _audio_body(self) -> bytes:
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= n <= MAX_AUDIO_BYTES:
+                raise ApiError(413, "That recording is too long. Keep it under a minute.")
+            return self.rfile.read(n)
+
         def _route(self, method: str):
             path = self.path.split("?")[0].rstrip("/") or "/"
             if method == "GET" and not path.startswith("/api/"):
-                found = frontend.asset(path[1:])
+                found = frontend.asset("metrics.html" if path == "/dashboard" else path[1:])
                 if found is None:
                     raise ApiError(404, "not found")
                 return 200, found[0], found[1]
@@ -59,6 +72,8 @@ def make_handler(service: PlannerService):
             if method == "GET" and path == "/health":
                 return 200, service.health(), "application/json"
             token, client = self._token(), self.client_address[0]
+            if path.startswith("/dashboard/"):
+                return self._dashboard(method, path[len("/dashboard/"):], token, client)
             if method == "POST" and path == "/plan":
                 body = self._json_body()
                 return 200, service.plan(body.get("request"), body.get("group"), token, client), "application/json"
@@ -71,6 +86,11 @@ def make_handler(service: PlannerService):
             m = re.fullmatch(r"/booking/([\w-]{1,64})/cancel", path)
             if method == "POST" and m:
                 return 200, service.cancel_booking(m.group(1), self._json_body(), token, client), "application/json"
+            if method == "POST" and path == "/chat":
+                return 200, service.chat(self._json_body(), token, client), "application/json"
+            if method == "POST" and path == "/transcribe":
+                kind = self.headers.get("Content-Type") or ""
+                return 200, service.transcribe(self._audio_body(), kind, token, client), "application/json"
             if method == "POST" and path == "/explore":
                 return 200, service.explore(self._json_body(), token, client), "application/json"
             if method == "POST" and path == "/photos":
@@ -87,10 +107,27 @@ def make_handler(service: PlannerService):
                 return 200, service.account(method, path[1:], body, token, client), "application/json"
             raise ApiError(404, "not found")
 
+        def _dashboard(self, method: str, view: str, token: str | None, client: str):
+            query = dict(parse_qsl(urlsplit(self.path).query))
+            headers = {"Cache-Control": "no-store"}
+            if method == "GET" and view == "status":
+                return 200, board.status(), "application/json", headers
+            if method == "POST" and view == "login":
+                return 200, board.login(self._json_body(), client), "application/json", headers
+            if method == "POST" and view == "logout":
+                return 200, board.logout(token), "application/json", headers
+            if method == "GET" and view == "export":
+                body, kind, name = board.export(query, token)
+                headers["Content-Disposition"] = f'attachment; filename="{name}"'
+                return 200, body, kind, headers
+            if method == "GET":
+                return 200, board.get(view, query, token), "application/json", headers
+            raise ApiError(404, "not found")
+
         def _handle(self, method: str):
             try:
-                status, payload, ctype = self._route(method)
-                self._send(status, payload, ctype)
+                status, payload, ctype, *extra = self._route(method)
+                self._send(status, payload, ctype, headers=extra[0] if extra else None)
             except ApiError as e:
                 self._send(e.status, {"error": e.message}, retry_after=e.retry_after)
             except Exception as e:           # noqa: BLE001

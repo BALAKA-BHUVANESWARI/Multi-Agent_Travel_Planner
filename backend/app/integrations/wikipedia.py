@@ -15,6 +15,7 @@ from typing import Callable
 
 from app.core import cache
 from app.integrations import openmeteo
+from app.observability import recorder as observe
 
 API = "https://en.wikipedia.org/w/api.php"
 ATTRIBUTION = "Nearby sights from Wikipedia (CC BY-SA 4.0)"
@@ -95,6 +96,7 @@ def _tags(page: dict, tags: dict) -> dict:
     return out
 
 
+@observe.retrieval("wikipedia.nearby_sights")
 def nearby_sights(lat: float, lon: float, radius_m: int, fetch: Callable | None = None) -> list[dict]:
     """OSM-shaped elements for visitable sights near a point; [] on any failure."""
     key = f"wikipedia:v2:{lat:.2f},{lon:.2f},{radius_m}"   # v2: entries carry coordinates
@@ -108,7 +110,8 @@ def nearby_sights(lat: float, lon: float, radius_m: int, fetch: Callable | None 
                            "prop": "coordinates|description|info|pageprops", "ppprop": "wikibase_item", "colimit": "max",
                            "format": "json", "formatversion": 2}, 8.0)
         pages = data.get("query", {}).get("pages", [])
-    except Exception:                                        # noqa: BLE001 - a free service may be down
+    except Exception as e:                                   # noqa: BLE001 - a free service may be down
+        observe.problem(e)
         return []
     elements = []
     for p in pages:
@@ -128,6 +131,7 @@ def nearby_sights(lat: float, lon: float, radius_m: int, fetch: Callable | None 
 PHOTO_BATCH = 50                    # the most titles one query accepts
 
 
+@observe.retrieval("wikipedia.photo_articles")
 def article_info(titles: list[str], fetch: Callable | None = None) -> dict | None:
     """What Wikipedia knows about each title: {asked title: {title, lat, lon, image}} for the articles that exist
     (``lat``/``lon`` are None when the article has no coordinates). None when Wikipedia could not be asked."""
@@ -147,7 +151,8 @@ def article_info(titles: list[str], fetch: Callable | None = None) -> dict | Non
         pages = {p["title"]: p for p in query.get("pages", []) if not p.get("missing") and not p.get("invalid")}
         renamed = {r["from"]: r["to"] for r in query.get("normalized", [])}
         moved = {r["from"]: r["to"] for r in query.get("redirects", [])}
-    except Exception:                                        # noqa: BLE001 - a free service may be down
+    except Exception as e:                                   # noqa: BLE001 - a free service may be down
+        observe.problem(e)
         return None
     found = {}
     for title in asked:

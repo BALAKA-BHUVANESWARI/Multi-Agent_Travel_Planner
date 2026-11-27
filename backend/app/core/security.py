@@ -74,6 +74,7 @@ def _sensitive(text: str) -> str | None:
 
 
 WITHHELD = "[withheld: contains a "
+sensitive_kind = _sensitive            # "card number", "password or PIN", ... or None
 
 
 def scrub(text: str) -> str:
@@ -126,8 +127,13 @@ def sanitize_untrusted(text: str, max_len: int = 400) -> str:
     if not isinstance(text, str):
         return ""
     text = _CTRL.sub(" ", text)
+    removed = 0
     for pat in _INJ:
-        text = pat.sub("[removed]", text)
+        text, count = pat.subn("[removed]", text)
+        removed += count
+    if removed:
+        from app.observability import recorder as observe          # here, as the recorder uses this module
+        observe.event("guardrail", "untrusted_text_cleaned", "blocked", removed=removed)
     text = re.sub(r"<[^>]{0,80}>", " ", text)          # strip markup-ish fragments
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_len]

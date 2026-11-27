@@ -1,4 +1,4 @@
-// Builds the web app into dist/, which the backend serves.
+// Builds the web app into dist/, which the backend serves: the planner (app/) and the metrics dashboard (dashboard/).
 //   npm run build   once, minified
 //   npm run watch   rebuild on every change while editing (reload the browser to see it)
 import { copyFileSync, mkdirSync, rmSync } from "node:fs";
@@ -6,7 +6,7 @@ import * as esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");
 const options = {
-  entryPoints: { app: "app/main.jsx" },
+  entryPoints: { app: "app/main.jsx", metrics: "dashboard/main.jsx" },
   outdir: "dist",
   bundle: true,
   jsx: "automatic",
@@ -20,6 +20,7 @@ const options = {
 rmSync("dist", { recursive: true, force: true });
 mkdirSync("dist");
 copyFileSync("index.html", "dist/index.html");
+copyFileSync("dashboard/index.html", "dist/metrics.html");          // served at /dashboard
 // the vector map libraries are ready-made browser files, loaded by index.html next to app.js
 for (const file of ["maplibre-gl/dist/maplibre-gl.js", "maplibre-gl/dist/maplibre-gl.css",
   "@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"]) {

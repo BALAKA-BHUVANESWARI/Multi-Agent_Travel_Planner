@@ -1,6 +1,7 @@
 import { MODE_ICON } from "../../services/constants.js";
 import { inr } from "../../services/format.js";
-import PlacePhotos, { isSight } from "./PlacePhotos.jsx";
+import { exampleKind } from "../../services/examplePhotos.js";
+import PlacePhotos, { ExamplePhotos, isSight } from "./PlacePhotos.jsx";
 
 function Weather({ weather }) {
   if (!weather) return null;
@@ -12,8 +13,9 @@ function Weather({ weather }) {
   );
 }
 
-function Item({ item, travelMode, destination, photos }) {
+function Item({ item, travelMode, destination, country, photos }) {
   const isActivity = item.type === "activity";
+  const example = isActivity ? exampleKind(item.id) : null;
   return (
     <li>
       <span className="t">{item.start}–{item.end}</span>
@@ -27,13 +29,17 @@ function Item({ item, travelMode, destination, photos }) {
           <PlacePhotos name={item.name} destination={destination} article={photos.byId[item.id]}
             lookup={photos.state} />
         )}
+        {example && (
+          <ExamplePhotos name={item.name} destination={destination} country={country} kind={example}
+            town={photos.town} lookup={photos.state} />
+        )}
       </span>
       <span>{isActivity && (item.cost_total ? inr(item.cost_total) : <span className="muted">free</span>)}</span>
     </li>
   );
 }
 
-export default function DayCard({ day, travelMode, destination, photos }) {
+export default function DayCard({ day, travelMode, destination, country, photos }) {
   return (
     <div className={`card day ${day.rainy ? "rainy" : ""}`}>
       <h3>
@@ -42,7 +48,8 @@ export default function DayCard({ day, travelMode, destination, photos }) {
       </h3>
       <ul className="items">
         {day.items.map((item, i) => (
-          <Item key={i} item={item} travelMode={travelMode} destination={destination} photos={photos} />
+          <Item key={i} item={item} travelMode={travelMode} destination={destination} country={country}
+            photos={photos} />
         ))}
       </ul>
       {day.notes.map((note, i) => <p className="note" key={i}>☔ {note}</p>)}

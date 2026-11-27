@@ -12,6 +12,7 @@ from app.core import config
 from app.data import gazetteer
 from app.data.curated_destinations import ALIASES, CITIES, DESTINATIONS
 from app.integrations import openmeteo
+from app.observability import recorder as observe
 
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 ATTRIBUTION = "Place lookup by Open-Meteo.com geocoding (GeoNames, CC BY 4.0)"
@@ -105,9 +106,15 @@ _CACHE: dict[str, dict] = {}
 def _live(query: str, fetch) -> dict:
     key = gazetteer.normalize(query)
     if key in _CACHE:
+        observe.event("retrieval", "open-meteo.place_lookup", memory_cache_hits=1, results=1)
         return _CACHE[key]
     try:
-        data = fetch(GEOCODE_URL, {"name": query, "count": 8, "language": "en", "format": "json"})
+        with observe.span("retrieval", "open-meteo.place_lookup") as step:
+            data = fetch(GEOCODE_URL, {"name": query, "count": 8, "language": "en", "format": "json"})
+            found = len((data or {}).get("results") or [])
+            step.set(results=found)
+            if not found:
+                step.status = "empty"
     except Exception as e:                                           # network / parse failure
         raise PlaceError(f"I couldn't reach the place-lookup service to find '{query}' ({type(e).__name__}). "
                          "Please try again in a moment.", retryable=True)
@@ -143,9 +150,11 @@ def resolve(query: str, fetch=None, live: bool | None = None) -> dict:
         raise PlaceError("Please give a city or town name.")
     slug = _curated_slug(q)
     if slug:
+        observe.event("retrieval", "built_in_place_list", results=1)
         return from_catalog(slug)
     entry = gazetteer.lookup(q)
     if entry:
+        observe.event("retrieval", "built_in_place_list", results=1)
         return _from_gazetteer(entry)
     if not (config.real_data_enabled() if live is None else live):
         raise PlaceError(f"I don't have '{q}' in my offline list and live place lookup is switched off.")

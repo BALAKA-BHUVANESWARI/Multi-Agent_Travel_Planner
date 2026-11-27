@@ -44,6 +44,7 @@ LLM_ROUTING = {
     "intake": ["groq", "gemini", "ollama"],
     "activities": ["groq", "gemini", "ollama"],
     "writer": ["gemini", "groq", "ollama"],
+    "chat": ["groq", "gemini", "ollama"],
 }
 LLM_RETRIES = 3               # attempts per provider on 429/5xx/timeout
 LLM_BACKOFF_BASE = 0.5

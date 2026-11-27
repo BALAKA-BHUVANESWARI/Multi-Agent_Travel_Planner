@@ -5,6 +5,7 @@ it never overrides what the rules found, and its output is schema-validated.
 """
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, timedelta
 
@@ -107,12 +108,16 @@ def parse_month(text: str) -> tuple[int | None, int | None]:
     """Return (month, day_of_month). 'may' must follow a preposition to avoid the verb."""
     low = text.lower()
     mon = rf"({_MONTH_FULL}|may|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)"
+    year = r"(?:20\d\d)\b"
     m = re.search(rf"(?<![\d,.])(\d{{1,2}})(?:st|nd|rd|th)\s+(?:of\s+)?{mon}\b", low) or \
-        re.search(rf"(?<![\d,.])(\d{{1,2}})\s+(?:of\s+)?{mon}\b(?!\s*\d)", low)
+        re.search(rf"(?<![\d,.])(\d{{1,2}})\s+(?:of\s+)?{mon}\b(?!\s*(?!{year})\d)", low)       # a year may follow
     if m and 1 <= int(m.group(1)) <= 31:
         return MONTHS[m.group(2)], int(m.group(1))
-    m = re.search(rf"\b{mon}\s+(\d{{1,2}})(?:st|nd|rd|th)\b", low)
-    if m:
+    # "December 28th", or "December 28" when the number can't be a count of days, people or money
+    not_a_day = r"(?![\s-]*(?:days?|nights?|weeks?|people|persons?|adults?|kids?|children|friends|travell?ers?|pax|" \
+                r"of us|k\b|l\b|lakh|lac|thousand)|[,.]\d|%)"
+    m = re.search(rf"\b{mon}\s+(\d{{1,2}})(?:(?:st|nd|rd|th)\b|\b{not_a_day})", low)
+    if m and 1 <= int(m.group(2)) <= 31:
         return MONTHS[m.group(1)], int(m.group(2))
     m = re.search(rf"\b(?:in|during|for|around|early|late|mid|this|next|of|by)\s+(?:the\s+)?(?:month\s+of\s+)?"
                   rf"({_MONTH_FULL}|may|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b", low)
@@ -297,7 +302,7 @@ def compute_start_date(month: int | None, day: int | None, today: date) -> tuple
     if month is None:
         return today + timedelta(days=21), True
     year = today.year
-    d = min(day or 10, 28 if month == 2 else 30)
+    d = min(day or 10, 28 if month == 2 else calendar.monthrange(year, month)[1])
     cand = date(year, month, d)
     if cand <= today:
         if month == today.month:

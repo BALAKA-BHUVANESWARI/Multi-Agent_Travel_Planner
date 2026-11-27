@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./styles.css";
 import "./dashboard.css";
+import "./chat.css";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

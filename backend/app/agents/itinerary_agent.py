@@ -10,6 +10,7 @@ from app.graph.state import entry
 from app.services import group_service as group_mod
 from app.services.export_service import render_summary
 from app.services.itinerary_builder import build_itinerary
+from app.observability import recorder as observe
 
 
 def merge_node(state: dict, deps) -> dict:
@@ -76,7 +77,10 @@ def writer_node(state: dict, deps) -> dict:
                   "invent places, prices or times. If you mention money, use the exact rupee figures provided "
                   "with the symbol ₹. Return {\"overview\": \"...\"}.")
         obj = deps.llm.complete_json("writer", system, json.dumps(facts), _WRITER_SCHEMA)
-        if obj and numbers_are_grounded(obj["overview"], _allowed_amounts(state)):
+        grounded = bool(obj) and numbers_are_grounded(obj["overview"], _allowed_amounts(state))
+        if obj:
+            observe.event("guardrail", "writer_amounts", "ok" if grounded else "rejected")
+        if grounded:
             overview, used = guardrails.sanitize_untrusted(obj["overview"], 900), True
     text = (f"{overview}\n\n---\n\n{template}" if overview else template)
     return {"summary": text, "log": [entry("writer", ("LLM overview + template" if used else "template summary")

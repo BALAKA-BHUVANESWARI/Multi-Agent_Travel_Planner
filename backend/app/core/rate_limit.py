@@ -28,6 +28,7 @@ def default_rules() -> dict:
         "plan": [(config.rate_limit("PLAN_PER_MINUTE", 10), 60), (config.rate_limit("PLAN_PER_DAY", 200), 86400)],
         "act": [(config.rate_limit("ACTIONS_PER_MINUTE", 30), 60)],
         "auth": [(config.rate_limit("AUTH_PER_MINUTE", 8), 60), (40, 3600)],
+        "voice": [(config.rate_limit("VOICE_PER_MINUTE", 10), 60)],
         "read": [(config.rate_limit("READS_PER_MINUTE", 120), 60)],
     }
 

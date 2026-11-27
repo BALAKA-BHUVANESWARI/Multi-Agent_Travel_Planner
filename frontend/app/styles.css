@@ -38,6 +38,7 @@ button:disabled { opacity:.5; cursor:not-allowed; }
 .note { font-size:13px; color:var(--rain); margin:6px 0 0; }
 /* pictures under each sight in the day plan */
 .sight-photos { margin:6px 0 4px; }
+.example-note { font-size:12px; font-style:italic; margin-bottom:4px; }
 .thumbs { display:flex; gap:6px; flex-wrap:wrap; }
 .thumbs button { position:relative; width:128px; height:88px; padding:0; border:0; border-radius:10px; overflow:hidden;
                  background:var(--line); }

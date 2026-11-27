@@ -20,6 +20,7 @@ from app.graph import edges as routing
 from app.graph.deps import Deps
 from app.graph.nodes import NODES, WORKERS, approval_node
 from app.graph.state import TripState, initial_state
+from app.observability import recorder as observe
 
 
 def build_graph(deps: Deps, checkpointer=None):
@@ -37,7 +38,8 @@ def build_graph(deps: Deps, checkpointer=None):
         # Pauses the graph; the checkpointer persists state until Command(resume=decision) arrives.
         decision = interrupt({"kind": "approval", "message": state.get("message"),
                               "pending": state.get("pending_approval")})
-        return approval_node(state, decision, deps)
+        with observe.adopt(state.get("thread_id")):             # so its safety decisions are recorded
+            return approval_node(state, decision, deps)
 
     g.add_node("approval", approval)
 

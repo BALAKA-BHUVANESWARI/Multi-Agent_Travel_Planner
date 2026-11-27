@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.core import config
 from app.core.utils import hash01, round_to, to_hhmm
 from app.integrations import live_prices as live
+from app.observability import recorder as observe
 from app.services.pricing import transport_estimator as transport
 from app.tools.common import (
     country_of,
@@ -55,7 +56,8 @@ def search_flights(origin: str, destination: str, depart_date: str, return_date:
 
     if mode in ("train", "bus", "car", "bike"):                   # the traveller chose an overland mode
         if transport.crosses_sea((olat, olon, o_cc), (d["lat"], d["lon"], d_cc)):
-            raise ToolError("No road or rail link: this trip crosses the sea. Try flight.", retryable=False)
+            raise ToolError("No road or rail link: this trip crosses the sea. Try flight.", retryable=False,
+                            not_possible=True)
         days = (ret - dep).days + 1
         options, basis = transport.options_for(mode, km, o_cf, d["cost_factor"], travelers, days,
                                                (o_cc, d_cc), jitter)
@@ -113,8 +115,10 @@ def search_flights(origin: str, destination: str, depart_date: str, return_date:
             result.update(live.flights(origin, destination, origin_name(origin, origin_geo), d["name"], dep, ret,
                                        travelers))
         except live.LiveUnavailable as e:
+            observe.event("retrieval", "live_prices.flights", "fallback", detail=str(e))
             result["live_note"] = f"Live fares were unavailable ({e}); the flight price is an estimate."
         except Exception as e:                                       # noqa: BLE001 - never let this break a plan
+            observe.event("retrieval", "live_prices.flights", "fallback", error=type(e).__name__)
             result["live_note"] = (f"Live fares were unavailable ({type(e).__name__}); the flight price is an "
                                    "estimate.")
     return result

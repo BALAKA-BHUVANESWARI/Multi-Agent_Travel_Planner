@@ -14,6 +14,7 @@ from app.graph import edges as routing
 from app.graph.deps import Deps
 from app.graph.nodes import NODES, WORKERS, approval_node
 from app.graph.state import apply_update, entry, initial_state
+from app.observability import recorder as observe
 
 MAX_STEPS = 25          # hard stop against runaway loops (the real caps are 2 replans + 2 revisions)
 
@@ -34,7 +35,7 @@ class Planner:
         """Run the 4 workers concurrently against the same input state; merge their disjoint writes."""
         snapshot = dict(state)
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            futures = {w: pool.submit(self.nodes[w], snapshot, self.deps) for w in WORKERS}
+            futures = {w: pool.submit(observe.carry(self.nodes[w]), snapshot, self.deps) for w in WORKERS}
             updates = {w: f.result() for w, f in futures.items()}
         for w in WORKERS:                   # deterministic merge order
             state = apply_update(state, updates[w])

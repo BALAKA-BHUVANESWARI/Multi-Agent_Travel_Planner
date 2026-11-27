@@ -9,6 +9,7 @@ from app.core import security as guardrails
 from app.core.utils import clip
 from app.data.curated_destinations import place_name
 from app.graph.state import entry
+from app.observability import recorder as observe
 from app.services import group_service as group_mod
 from app.services import sights_guide as guide
 from app.services.feedback_parser import matches_excluded
@@ -79,6 +80,9 @@ def _llm_rerank(ranked: list[dict], c: dict, deps) -> tuple[list[dict], bool]:
     if not obj:
         return ranked, False
     by_id = {r["id"]: r for r in ranked}
+    unknown = [i for i in obj["order"] if i not in by_id]
+    observe.event("guardrail", "ai_ranking_ids", "rejected" if unknown else "ok", detail=unknown or None,
+                  unknown=len(unknown), returned=len(obj["order"]), offered=len(ranked))
     seen, order = set(), []
     for i in obj["order"]:
         if i in by_id and i not in seen:
@@ -99,6 +103,7 @@ def _dining_result(future) -> dict:
     try:
         res = future.result(timeout=DINING_WAIT)
     except Exception as e:                                       # noqa: BLE001 - dining must never break a plan
+        observe.event("retrieval_wait", "restaurants", "gave_up", error=type(e).__name__)
         return {**empty, "note": f"Restaurant lookup unavailable ({guardrails.sanitize_untrusted(str(e), 80)})."}
     if not isinstance(res, dict):
         return empty
@@ -138,7 +143,7 @@ def activities_node(state: dict, deps) -> dict:
         return {}
     c = state["constraints"]
     pool = ThreadPoolExecutor(max_workers=1)                    # restaurants are looked up while the sights are
-    f_dine = pool.submit(call_with_retry, deps.tools, "search_dining", retries=1, sleep=deps.sleep,
+    f_dine = pool.submit(observe.carry(call_with_retry), deps.tools, "search_dining", retries=1, sleep=deps.sleep,
                          destination=c["destination"], destination_geo=c.get("destination_geo"))
     pool.shutdown(wait=False)
     try:

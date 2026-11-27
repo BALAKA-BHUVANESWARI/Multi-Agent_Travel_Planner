@@ -1,0 +1,37 @@
+/* The chat button and window. It sits above the map (Leaflet uses z-index up to 1000). */
+.chat-launcher { position:fixed; right:18px; bottom:18px; z-index:1200; border:0; border-radius:999px; padding:12px 20px;
+  background:var(--brand); color:#fff; font-weight:700; font-size:15px; box-shadow:0 8px 24px rgba(15,35,90,.3); }
+.chat-panel { position:fixed; right:18px; bottom:78px; z-index:1200; display:flex; flex-direction:column;
+  width:390px; max-width:calc(100vw - 36px); height:600px; max-height:calc(100vh - 100px); background:#fff;
+  border:1px solid #dbe2f0; border-radius:16px; overflow:hidden; box-shadow:0 18px 50px rgba(15,35,90,.28); }
+.chat-panel header { display:flex; justify-content:space-between; align-items:center; padding:10px 14px;
+  background:var(--brand); color:#fff; }
+.chat-close { border:0; background:none; color:#fff; font-size:16px; padding:2px 6px; }
+.chat-log { flex:1; overflow-y:auto; padding:12px; background:#f5f7fc; }
+.chat-msg { display:flex; flex-direction:column; align-items:flex-start; margin-bottom:10px; }
+.chat-msg.you { align-items:flex-end; }
+.chat-msg .bubble { max-width:90%; padding:8px 12px; border-radius:14px; background:#fff; border:1px solid #e1e7f3;
+  font-size:14px; line-height:1.45; white-space:pre-line; overflow-wrap:anywhere; }
+.chat-msg.you .bubble { background:var(--brand); border-color:var(--brand); color:#fff; }
+.chat-msg.failed .bubble { border-color:#e2a0a0; background:#fff3f3; }
+.chat-ai { margin-top:6px; font-size:12px; font-style:italic; opacity:.7; }
+.chat-link { display:block; margin-top:6px; padding:0; border:0; background:none; color:var(--brand); font-weight:700;
+  font-size:13px; }
+.chat-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.chat-chips button { border-radius:999px; padding:5px 11px; font-size:13px; background:#fff; }
+.chat-note { margin:6px 0 10px; font-size:13px; color:#5b6784; }
+.chat-panel form { padding:10px 12px; border-top:1px solid #e1e7f3; }
+.chat-panel textarea { width:100%; box-sizing:border-box; resize:none; min-height:0; padding:8px 10px; font:inherit; font-size:14px;
+  border:1px solid #cfd8ea; border-radius:10px; }
+.chat-actions { display:flex; gap:8px; margin-top:6px; }
+.chat-actions .chat-send { margin-left:auto; }
+.chat-mic.on { background:#c62828; border-color:#c62828; color:#fff; }
+.chat-hint { margin:6px 0 0; font-size:12px; color:#5b6784; line-height:1.35; }
+.chat-error { color:#b3261e; }
+footer { padding-bottom:64px; } /* room for the chat button */
+@media (max-width:640px) {
+  .chat-panel { inset:0; width:auto; max-width:none; height:auto; max-height:none; border-radius:0; border:0; }
+  .chat-launcher { right:12px; bottom:12px; }
+  .chat-launcher.is-open { display:none; }
+  .chat-panel textarea { font-size:16px; } /* smaller text makes phones zoom in */
+}

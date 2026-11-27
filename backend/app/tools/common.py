@@ -7,6 +7,7 @@ from datetime import date
 from app.data.curated_destinations import CITIES, DESTINATIONS, SUPPORTED_DESTINATIONS
 from app.services.pricing import price_estimator as dynamic
 from app.tools.errors import ToolError
+from app.observability import recorder as observe
 
 
 def clean_geo(geo) -> dict | None:
@@ -88,8 +89,10 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def safe_result(future, default, timeout=None):
+def safe_result(future, default, timeout=None, label: str = "lookup"):
     try:
         return future.result(timeout=timeout)
-    except Exception:                                   # noqa: BLE001 - every free service may fail; plan anyway
+    except Exception as e:                              # noqa: BLE001 - every free service may fail; plan anyway
+        waited_out = "Timeout" in type(e).__name__
+        observe.event("retrieval_wait", label, "gave_up" if waited_out else "error", error=type(e).__name__)
         return default

@@ -37,7 +37,8 @@ export default function PlanView({ result, onDecide, onRun, onResult, onPickPlac
       <TravelAndHotel transport={result.flight} hotel={result.hotel} travelWord={travelWord} />
       <div className="muted" style={{ margin: "14px 0 -6px" }}>Weather: {result.weather?.source || "unavailable"}</div>
       {result.itinerary.days.map((day) => (
-        <DayCard key={day.day} day={day} travelMode={travelMode} destination={destination} photos={photos} />
+        <DayCard key={day.day} day={day} travelMode={travelMode} destination={destination}
+          country={result.constraints.destination_geo?.country || ""} photos={photos} />
       ))}
       <MapCard itinerary={result.itinerary} centre={result.constraints.destination_geo} />
       <TopSights activities={activities} itinerary={result.itinerary} />

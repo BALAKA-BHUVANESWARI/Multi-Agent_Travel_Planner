@@ -13,6 +13,7 @@ from app.services import geo_service as geo_mod
 from app.services import request_parser as intake_mod
 from app.services.export_service import render_summary
 from app.services.feedback_parser import matches_excluded, parse_feedback
+from app.observability import recorder as observe
 
 
 def present_node(state: dict, deps) -> dict:
@@ -40,6 +41,7 @@ def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict,
 
     def reject(key: str, word: str, why: str) -> None:
         ch.pop(key, None)
+        observe.event("guardrail", "change_not_possible", "rejected", detail=why or None, change=key)
         notes[:] = [n for n in notes if word not in n]
         notes.append(why)
 
@@ -131,10 +133,12 @@ def approval_node(state: dict, decision: dict, deps=None) -> dict:
                 "log": [entry("approval", f"unknown action {action!r}")]}
     text = (decision.get("feedback") or "").strip()
     g = guardrails.check_input(text, require_topic=False)
+    observe.event("guardrail", "feedback_check", "ok" if g["allowed"] else "blocked", code=g["code"])
     if not g["allowed"]:
         return {**base, "replan_reason": None, "notice": g["message"],
                 "log": [entry("approval", f"feedback blocked: {g['code']}")]}
     if state.get("revisions", 0) >= config.MAX_REVISIONS:
+        observe.event("guardrail", "revision_limit", "blocked")
         return {**base, "replan_reason": None, "pending_approval": {"can_revise": False, "revisions_left": 0,
                                                                      "auto_replans_used": state.get("retries", 0)},
                 "warnings": ["Revision limit reached: approve this plan or cancel."],
@@ -142,6 +146,7 @@ def approval_node(state: dict, decision: dict, deps=None) -> dict:
                 "log": [entry("approval", "revision cap reached")]}
     fb = parse_feedback(text, state["constraints"], state.get("strategy", "normal"))
     if not fb["recognized"]:
+        observe.event("guardrail", "feedback_understood", "rejected")
         return {**base, "replan_reason": None,
                 "notice": "I couldn't tell what to change. Try: 'make it cheaper', 'budget 80000', 'make it 4 "
                           "days', 'add 1 person', 'move it to January', 'go by train', 'change destination to "

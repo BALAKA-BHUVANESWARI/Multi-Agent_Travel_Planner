@@ -21,6 +21,7 @@ from collections import deque
 from datetime import datetime, timezone
 
 from app.core import config
+from app.observability import recorder as observe
 
 MAX_RECORDS = 2000          # node timings kept in memory (older ones are dropped)
 _LLM_COUNTERS = ("calls", "cache_hits", "fallbacks", "failures")
@@ -92,6 +93,22 @@ class Tracer:
             pass
 
 
+def _record_result(step, name: str, result, state: dict) -> None:
+    """For the dashboard records: did the agent have to give up on something, and what did it log."""
+    if not isinstance(result, dict):
+        return
+    if not result:
+        step.fail("not_needed")                       # a worker this replan did not ask for
+    elif any(isinstance(v, dict) and v.get("error") for v in result.values()):
+        step.fail("degraded")
+    for line in result.get("log") or []:
+        # the intake log can repeat saved preferences, which are never recorded
+        text = None if name == "intake" and state.get("memory") else line.get("msg")
+        observe.event("log", str(line.get("agent") or name), detail=text)
+    if result.get("warnings"):
+        step.set(warnings=len(result["warnings"]))
+
+
 def wrap(name: str, fn):
     """Time a node function ``fn(state, deps)``; records into ``deps.tracer`` when there is one."""
     def timed(state, deps):
@@ -99,7 +116,13 @@ def wrap(name: str, fn):
         t0 = time.perf_counter()
         ok = False
         try:
-            result = fn(state, deps)
+            with observe.adopt((state or {}).get("thread_id")), observe.span("agent", name) as step:
+                observe.hide(*[m.get("name") for m in (state or {}).get("group") or []])
+                if (state or {}).get("memory"):                  # saved preferences are never recorded
+                    observe.keep("uses_memory", True)
+                    observe.hide(state["memory"].get("home_city"))
+                result = fn(state, deps)
+                _record_result(step, name, result, state or {})
             ok = True
             return result
         finally:
