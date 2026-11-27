@@ -50,7 +50,7 @@ main { min-width:0; padding:0 18px 60px; }
 .section-head .muted { font-size:12px; }
 button.link { border:0; background:none; padding:0; color:var(--brand); font-size:13px; font-weight:600; }
 #panel .card, #sos .card { margin-top:14px; }
-#sos, #panel, #planForm, #pipeline, #top10, #insights, #msg { scroll-margin-top:14px; }
+#sos, #panel, #planForm, #pipeline, #top10, #insights, #msg, #world { scroll-margin-top:14px; }
 
 /* plan your trip */
 .shell .plan-card { position:relative; z-index:4; margin-top:30px; padding-top:20px; }
@@ -124,6 +124,28 @@ button.link { border:0; background:none; padding:0; color:var(--brand); font-siz
 .facts { display:flex; flex-wrap:wrap; gap:4px; }
 .facts span { font-size:11px; background:#f1f4ff; border-radius:6px; padding:1px 6px; }
 .place-body button { margin-top:auto; font-size:12px; font-weight:700; padding:5px 8px; color:var(--brand); border-color:#c6d4ff; }
+
+/* world destinations page */
+.world-head { padding:22px 4px 4px; }
+.world-head h1 { margin:0 0 4px; font-size:30px; color:#11285c; letter-spacing:-.4px; }
+.world-head p { margin:0; color:var(--muted); }
+.shell .explore-card { background:linear-gradient(120deg,#eef3ff,#f3f0ff); }
+.explore-card h2 { display:flex; gap:8px; align-items:center; }
+.explore-card p { margin:4px 0 10px; font-size:13px; }
+.explore-form { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.explore-form input { flex:1 1 220px; min-width:0; height:40px; background:#fff; color:var(--ink); }
+.explore-card .chips { align-items:center; font-size:13px; }
+.explore-note { margin:12px 4px; font-weight:600; }
+.explore-note.bad { color:var(--bad); }
+.explore-head { display:grid; grid-template-columns:minmax(0,320px) minmax(0,1fr); gap:16px; align-items:center; }
+.explore-head .photo { height:190px; border-radius:12px; }
+.explore-head h2 { font-size:24px; }
+.explore-head button { display:block; margin-top:12px; }
+#exploreResult > h3 { font-size:15px; margin:16px 0 10px; }
+#exploreResult details { font-size:13px; }
+.explore-notes { margin:12px 0 6px; padding-left:18px; font-size:12px; }
+.explore-sources { font-size:12px; margin:0 0 8px; }
+@media (max-width:640px) { .explore-head { grid-template-columns:minmax(0,1fr); } }
 
 /* the three boxes */
 .tiles { display:grid; grid-template-columns:1.25fr 1fr .9fr; gap:14px; }

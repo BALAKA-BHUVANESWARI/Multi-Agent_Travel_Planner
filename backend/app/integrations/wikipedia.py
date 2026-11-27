@@ -123,3 +123,41 @@ def nearby_sights(lat: float, lon: float, radius_m: int, fetch: Callable | None 
     if elements:
         cache.put(key, elements)
     return elements
+
+
+PHOTO_BATCH = 50                    # the most titles one query accepts
+
+
+def article_info(titles: list[str], fetch: Callable | None = None) -> dict | None:
+    """What Wikipedia knows about each title: {asked title: {title, lat, lon, image}} for the articles that exist
+    (``lat``/``lon`` are None when the article has no coordinates). None when Wikipedia could not be asked."""
+    asked = sorted({t for t in titles if t})[:PHOTO_BATCH]
+    if not asked:
+        return {}
+    key = "wikipedia-article-info:v1:" + "|".join(asked)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    fetch = fetch or openmeteo.fetch_json
+    try:
+        data = fetch(API, {"action": "query", "titles": "|".join(asked), "redirects": 1,
+                           "prop": "coordinates|pageimages", "piprop": "name", "pilimit": PHOTO_BATCH,
+                           "colimit": "max", "format": "json", "formatversion": 2}, 8.0)
+        query = data["query"]
+        pages = {p["title"]: p for p in query.get("pages", []) if not p.get("missing") and not p.get("invalid")}
+        renamed = {r["from"]: r["to"] for r in query.get("normalized", [])}
+        moved = {r["from"]: r["to"] for r in query.get("redirects", [])}
+    except Exception:                                        # noqa: BLE001 - a free service may be down
+        return None
+    found = {}
+    for title in asked:
+        final = renamed.get(title, title)
+        final = moved.get(final, final)
+        page = pages.get(final)
+        if page is None:
+            continue
+        co = (page.get("coordinates") or [{}])[0]
+        found[title] = {"title": final, "lat": co.get("lat"), "lon": co.get("lon"),
+                        "image": bool(page.get("pageimage"))}
+    cache.put(key, found)
+    return found

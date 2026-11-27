@@ -26,6 +26,7 @@ Built on **LangGraph** and **MCP**. It runs on free tiers and free data sources,
 | Feature | Summary |
 |---|---|
 | Dashboard | A trip form or plain language, agent status, and 10 popular destinations in India to start from |
+| World destinations | A second page with 15 popular places around the world, and "Explore more places": type any place name to see it with its top sights and pictures |
 | Plan any destination | A day-by-day itinerary with times, top sights, where to eat (veg and non-veg), a map and a budget breakdown |
 | Choose how to travel | Flight, train, bus, car or bike, with price, time and estimated emissions side by side |
 | Change the plan by chatting | "make it cheaper", "add 1 person", "go by train", "more food" |
@@ -145,6 +146,7 @@ All routes start with `/api/v1`. FastAPI serves interactive documentation at `/d
 | `POST /approve/{thread_id}` | `{"action": "approve" \| "revise" \| "cancel", "feedback": ""}` |
 | `GET /plan/{thread_id}` | Read a saved plan |
 | `POST /booking/{thread_id}/cancel` | Cancel a mock booking (`{"confirm": true}` to confirm) |
+| `POST /explore` | Show a place and its top sights, with pictures: `{"place": "Prague"}` |
 | `/trip/{thread_id}/{tool}` | Trip toolkit: companion, emergency, documents, footprint, expenses |
 | `POST /emergency` | Emergency numbers and nearby help (never needs sign-in) |
 | `/auth/...`, `/me`, `/trips` | Optional accounts, saved preferences, "My trips" |

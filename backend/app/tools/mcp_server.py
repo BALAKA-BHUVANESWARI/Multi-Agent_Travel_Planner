@@ -67,6 +67,12 @@ def search_places(destination: str, preferences: list[str] | None = None,
 
 
 @mcp.tool()
+def find_place_photos(place: dict[str, Any], sights: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """The Wikipedia article to take each photo from, accepted only when its coordinates match the place."""
+    return _run(registry.find_place_photos, place, sights)
+
+
+@mcp.tool()
 def search_dining(destination: str, destination_geo: dict[str, Any] | None = None) -> dict[str, Any]:
     """Top restaurants split into vegetarian and non-vegetarian, with hours and best time to go (live data)."""
     return _run(registry.search_dining, destination, destination_geo)

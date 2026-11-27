@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from app.agents.explore_agent import explore_place
 from app.core import config
 from app.core import security as guardrails
 from app.core.rate_limit import RateLimited, RateLimiter
@@ -181,6 +182,22 @@ class PlannerService:
         if state is None:
             raise ApiError(404, f"unknown thread '{thread_id}'")
         return public_view(self._with_booking_record(state), self.engine, self._metrics.get(thread_id))
+
+    # ----------------------------------------------------------------- explore
+    def explore(self, body: dict | None, token: str | None = None, client: str = "") -> dict:
+        """POST /api/v1/explore {"place": ...}: the place and its top sights, with pictures. Nothing is saved."""
+        user = self._user(token)
+        self._limit("act", user, client)
+        place = body.get("place") if isinstance(body, dict) else None
+        if not isinstance(place, str) or not place.strip() or len(place) > 80:
+            raise ApiError(422, "Type a city, town or place name (up to 80 characters).")
+        verdict = guardrails.check_input(guardrails.scrub(place.strip()), require_topic=False)
+        if not verdict["allowed"]:
+            raise ApiError(422, verdict["message"])
+        try:
+            return explore_place(" ".join(place.split()), self.planner.deps)
+        except ToolError as e:
+            raise ApiError(502 if e.retryable else 422, str(e))
 
     # ------------------------------------------------------------ cancellation
     def cancel_booking(self, thread_id: str, body: dict, token: str | None = None, client: str = "") -> dict:

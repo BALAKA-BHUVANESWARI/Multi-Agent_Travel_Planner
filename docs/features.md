@@ -126,6 +126,21 @@ Endpoints: `POST /api/v1/emergency` (`{"place": "Bangkok", "nearby": true}`, `{"
 `/documents/tick`), `DELETE /api/v1/trip/{thread_id}/{expenses|documents}/{id}`. MCP tools used: `find_help_nearby`,
 `local_tips`.
 
+## World destinations and exploring any place
+
+* The **World Destinations** page (`#world`) shows 15 hand-picked places. It is not an official ranking, and the best
+  months and trip lengths are rough guidance. **Plan this trip** fills in the trip form.
+* **Explore more places** takes any place name. Three steps run: the place is looked up, its top sights are ranked
+  (the same sources as a trip plan), and a picture is found for each. This is separate from the trip graph and uses no
+  AI model. Nothing is saved apart from the usual place cache.
+* **Pictures are only shown when they can be confirmed:** the Wikipedia article must have its own location close to the
+  place. A sight with a known position must match within 5 km. Otherwise a drawing is shown. Some real places get a
+  drawing because their article gives no main location.
+* A region or country name (for example "Switzerland") asks for a city or town instead.
+* Sights need live data (`REAL_DATA=1`). In very large cities the free sources can miss famous sights.
+
+Endpoint: `POST /api/v1/explore` with `{"place": "Prague"}`. MCP tool added: `find_place_photos`.
+
 ## Control flow in numbers
 
 * Automatic re-plans (budget or critic): at most **2**, then the plan is shown with a visible warning.

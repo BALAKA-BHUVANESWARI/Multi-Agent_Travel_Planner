@@ -20,6 +20,8 @@ ARGS = {
     "get_weather": dict(destination="goa", start_date="2026-12-10", days=5, today="2026-11-24"),
     "search_places": dict(destination="goa", preferences=["beach", "food"]),
     "search_dining": dict(destination="goa"),
+    "find_place_photos": dict(place={"name": "Goa", "lat": 15.49, "lon": 73.82},
+                              sights=[{"id": "a", "name": "Fort Aguada"}]),
     "find_help_nearby": dict(lat=15.38, lon=73.83),
     "local_tips": dict(destination="goa"),
     "book_trip": dict(idempotency_key="abc", summary={"x": 1}),

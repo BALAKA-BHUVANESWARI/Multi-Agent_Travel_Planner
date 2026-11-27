@@ -5,6 +5,7 @@ const ITEMS = [
   ["home", "Home", "home"],
   ["trips", "My Trips", "trips"],
   ["explore", "Explore Destinations", "globe"],
+  ["world", "World Destinations", "pin"],
   ["insights", "Travel Insights", "chart"],
   ["profile", "Profile", "user"],
   ["help", "Emergency Help", "help"],
