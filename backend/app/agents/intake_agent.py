@@ -18,6 +18,7 @@ from app.agents.transport_agent import build_travel_options, travel_options_mess
 from app.core import config
 from app.core.utils import fmt_inr
 from app.graph.state import entry
+from app.services import fact_checks
 from app.services import geo_service as geo_mod
 from app.services import group_service as group_mod
 from app.services import request_parser as intake_mod
@@ -75,6 +76,10 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
             filled.append("preferences")
     parsed["missing"] = [k for k in ("origin", "destination", "days", "budget")
                          if c[k] is None and k not in texts]
+    values = {k: obj.get("budget_inr" if k == "budget" else k) for k in filled}
+    if "preferences" in values:
+        values["preferences"] = c["preferences"]                # only the interests that were kept
+    fact_checks.record_request_values(text, values)             # recorded and flagged only
     return filled
 
 

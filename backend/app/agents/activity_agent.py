@@ -10,6 +10,7 @@ from app.core.utils import clip
 from app.data.curated_destinations import place_name
 from app.graph.state import entry
 from app.observability import recorder as observe
+from app.services import fact_checks
 from app.services import group_service as group_mod
 from app.services import sights_guide as guide
 from app.services.feedback_parser import matches_excluded
@@ -83,6 +84,7 @@ def _llm_rerank(ranked: list[dict], c: dict, deps) -> tuple[list[dict], bool]:
     unknown = [i for i in obj["order"] if i not in by_id]
     observe.event("guardrail", "ai_ranking_ids", "rejected" if unknown else "ok", detail=unknown or None,
                   unknown=len(unknown), returned=len(obj["order"]), offered=len(ranked))
+    fact_checks.record_ranking(len(obj["order"]), unknown)
     seen, order = set(), []
     for i in obj["order"]:
         if i in by_id and i not in seen:

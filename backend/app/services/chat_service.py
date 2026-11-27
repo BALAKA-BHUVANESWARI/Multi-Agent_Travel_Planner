@@ -16,6 +16,7 @@ import re
 from app.core.utils import fmt_inr
 from app.data import gazetteer
 from app.observability import recorder as observe
+from app.services import fact_checks
 from app.services import request_parser as parser
 from app.services.feedback_parser import parse_feedback
 
@@ -308,8 +309,13 @@ def ai_answer(state: dict, text: str, llm) -> str | None:
         return None
     user = json.dumps({"question": text, "plan": plan_facts(state)}, ensure_ascii=False, default=str)
     found = llm.complete_json("chat", _AI_SYSTEM, user, _AI_SCHEMA)
-    answer = " ".join(str((found or {}).get("answer") or "").split())
-    return answer[:800] or None
+    answer = " ".join(str((found or {}).get("answer") or "").split())[:800]
+    if answer:                                                  # recorded and flagged only
+        c = state.get("constraints") or {}
+        fact_checks.record_text("chat", answer, lambda: [plan_facts(state), (state.get("flight") or {}).get("journey")],
+                                start_date=c.get("start_date"),
+                                days=c.get("days"), shown=True, question=text)
+    return answer or None
 
 
 # ------------------------------------------------------------------ the conversation

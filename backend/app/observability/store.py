@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS spans(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, pare
     name TEXT NOT NULL, start_ms REAL NOT NULL, duration_ms REAL NOT NULL, status TEXT NOT NULL, attrs TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS details(run_id TEXT NOT NULL, span_id TEXT, name TEXT NOT NULL, content TEXT NOT NULL,
     created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS marks(span_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, verdict TEXT NOT NULL,
+    created TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS spans_by_run ON spans(run_id);
 CREATE INDEX IF NOT EXISTS details_by_run ON details(run_id);
 CREATE INDEX IF NOT EXISTS runs_by_time ON runs(started);
@@ -62,6 +64,7 @@ class RecordStore:
     def _drop_orphans(self) -> None:
         self._conn.execute("DELETE FROM spans WHERE run_id NOT IN (SELECT id FROM runs)")
         self._conn.execute("DELETE FROM details WHERE run_id NOT IN (SELECT id FROM runs)")
+        self._conn.execute("DELETE FROM marks WHERE run_id NOT IN (SELECT id FROM runs)")
 
     def prune(self, keep_days: int, detail_keep_days: int, max_runs: int = MAX_RUNS) -> None:
         with self._lock, self._conn:
@@ -80,6 +83,25 @@ class RecordStore:
             if owner:
                 self._conn.execute("DELETE FROM runs WHERE owner=?", (owner,))
             self._drop_orphans()
+
+    # -- the owner's own judgement of a flagged fact check: the only thing the dashboard writes
+    def set_mark(self, span_id: str, verdict: str) -> bool:
+        """``verdict`` "" removes the mark. False when there is no flagged check with this id."""
+        with self._lock, self._conn:
+            found = self._conn.execute("SELECT run_id FROM spans WHERE id=? AND type='fact_check' "
+                                       "AND status='flagged'", (span_id,)).fetchone()
+            if not found:
+                return False
+            if verdict:
+                self._conn.execute("INSERT OR REPLACE INTO marks VALUES(?,?,?,?)",
+                                   (span_id, found[0], verdict, _iso(now())))
+            else:
+                self._conn.execute("DELETE FROM marks WHERE span_id=?", (span_id,))
+            return True
+
+    def marks(self) -> dict:
+        with self._lock:
+            return dict(self._conn.execute("SELECT span_id, verdict FROM marks"))
 
     # -- reading (used by the tests now and by the dashboard next)
     def _rows(self, sql: str, args=()) -> list[dict]:

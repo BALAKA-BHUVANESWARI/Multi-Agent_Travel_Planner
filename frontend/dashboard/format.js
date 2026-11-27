@@ -85,6 +85,7 @@ export const STEP_TYPES = {
   llm_call: "AI call",
   voice: "Voice",
   guardrail: "Safety check",
+  fact_check: "Made-up fact check",
   log: "Agent note",
   request: "Request",
 };

@@ -36,7 +36,7 @@ Built on **LangGraph** and **MCP**. It runs on free tiers and free data sources,
 | Plan for a group | Everyone's likes and dislikes, with a fairness report |
 | Trip toolkit | Packing list and local customs, emergency numbers and nearby help, document reminders, emissions, expense tracking |
 | Live prices (optional) | Google Flights and Google Hotels prices through a free Tavily key |
-| Metrics dashboard (optional) | A password-protected page at `/dashboard` for whoever runs the app: timings, agents, AI calls, request timelines, data lookups and logs, kept on your computer |
+| Metrics dashboard (optional) | A password-protected page at `/dashboard` for whoever runs the app: timings, agents, AI calls, request timelines, data lookups, logs, safety rules and made-up fact checks, kept on your computer |
 
 Details of each feature are in [docs/features.md](docs/features.md).
 

@@ -116,6 +116,8 @@ def make_handler(service: PlannerService):
                 return 200, board.login(self._json_body(), client), "application/json", headers
             if method == "POST" and view == "logout":
                 return 200, board.logout(token), "application/json", headers
+            if method == "POST" and view == "mark":
+                return 200, board.mark(self._json_body(), token), "application/json", headers
             if method == "GET" and view == "export":
                 body, kind, name = board.export(query, token)
                 headers["Content-Disposition"] = f'attachment; filename="{name}"'

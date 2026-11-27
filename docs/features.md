@@ -241,8 +241,8 @@ On Windows, double-click `scripts\run_tests.bat` for the tests and `scripts\run_
 Each plan, approval, chat message, voice recording, destination search, photo lookup and booking cancellation is
 recorded in `.runtime/observability.db`, on this computer only. A record holds the steps of the request as a tree:
 agents, tool calls (with each retry), data lookups (found, empty, error, timeout, skipped or cached), AI calls
-(provider, model, retries, fallback, tokens as reported by the provider or estimated) and safety decisions. The
-metrics dashboard below shows them. They can also be printed from the `backend` folder:
+(provider, model, retries, fallback, tokens as reported by the provider or estimated), safety decisions and the
+automatic made-up fact checks. The metrics dashboard below shows them. They can also be printed from the `backend` folder:
 
 ```
 python -m app.observability            latest requests, and the steps of the newest one
@@ -259,12 +259,14 @@ python -m app.observability 3 --text   with the detailed text, if it was kept
 
 * **Basic records** hold names, times, counts and result codes. They hold no typed text, place names, AI replies or
   error messages.
-* **Detailed records** are cleaned first: API keys, email addresses, group members' names and the saved home city are
+* **Detailed records** also keep the examples of what a fact check flagged, with the AI text it checked. They are
+  cleaned first: API keys, email addresses, group members' names and the saved home city are
   hidden, and text that looks like a card or ID number, code or password is withheld. Prompts that carry saved
   preferences are not kept. Cleaning works by pattern, so it cannot recognise every personal detail someone types
   (a street address, or a name that is not in the group list). Switch it on only when you need it.
-* **Never recorded:** keys, sign-in tokens, passwords, audio and transcripts, emergency and trip toolkit requests,
-  and the text of chat messages about an emergency.
+* **Never recorded:** keys, sign-in tokens, passwords, audio and transcripts, emergency help and trip toolkit
+  requests, and the text of chat messages about an emergency (a chat reply fixed in advance is counted by its topic
+  only).
 * Deleting an account also deletes its records. Recording problems never stop or change a plan.
 * With `TOOLS_MODE=mcp`, tool calls are recorded but the data lookups inside the tool server are not.
 
@@ -279,8 +281,8 @@ DASHBOARD_PASSWORD=choose-your-own-password
 ```
 
 The password needs at least 8 characters. Signing in lasts until the browser tab is closed, 12 hours pass, the server
-restarts or the password changes. Wrong guesses are limited (5 a minute). The dashboard only reads: it cannot change a
-plan or a record, and looking at it is not recorded.
+restarts or the password changes. Wrong guesses are limited (5 a minute). The dashboard cannot change a plan or what
+was recorded. The one thing it saves is your own mark on a flagged fact check. Looking at it is not recorded.
 
 | Tab | What it shows |
 | --- | --- |
@@ -290,6 +292,8 @@ plan or a record, and looking at it is not recorded.
 | Traces | one request as a timeline, parallel agents side by side, with linked requests (changes, approval, chat) |
 | Retrieval | each data source (found, found nothing, failed, timed out, skipped, from cache, times), fallbacks, and which sources' places reached finished plans |
 | Logs | every step, warning and error, with search and filters; each line opens its request's timeline |
+| Guardrails | typed messages stopped (by reason), private details withheld (type only), web text cleaned, AI output thrown away, plan checks and price or total failures, change and rate limits, chat replies fixed in advance, and the latest times a rule stepped in |
+| Hallucination checks | AI summaries, chat answers, request values and activity rankings checked and flagged, by kind of detail and by model, with examples and your "real problem / false alarm" mark |
 
 Filters: period or dates, request type, result, agent, AI model, and request or trip id. Refresh, optional refresh
 every 15 seconds, and CSV or JSON download of what the filters show (the file stays on your computer; cells that a
@@ -306,8 +310,30 @@ How to read it:
   cannot see a bill.
 * Test scores come from `backend/evals/report.md`, so they change only when `python evals/run_evals.py` is run again.
 * With the most records it keeps (5,000 requests), a tab can take a few seconds to load.
-* Safety checks appear in Traces and Logs. Separate tabs for safety checks, made-up facts and evaluations are not
-  built yet.
+* A rule on the Guardrails tab can stop an ordinary message by mistake, so a count there is not a count of attacks.
+  Only limits hit by recorded requests appear.
+* A tab for evaluations (test scores over time, comparisons and live AI tests) is not built yet.
+
+### Made-up fact checks
+
+The checks compare what an AI model returned with facts the app already has. They only record and flag: the planner,
+the summary and the chat reply are exactly as they would be without them. (The older rule that leaves out an AI
+summary with a rupee amount not in the plan still works as before.)
+
+| AI output | What is compared |
+| --- | --- |
+| Trip summary and chat answers | rupee amounts, dates, day and night counts and place names, against the plan. Places named in the chat question are allowed |
+| Values read from a request | places, days, budget and interests that the rules could not read, against the typed words. A one-letter spelling correction is counted, not flagged |
+| Activity ranking | ids that were not on the list the model was given |
+
+**These are not proof.** A flag means "not found in the plan or the request", and it can be a false alarm: a real
+nearby town the plan does not mention is flagged too, and so is a figure the model worked out itself. A made-up detail
+can also slip through: money not written with ₹, Rs, INR or "rupees", a one-word place name that is not a known town
+or city, weekdays, clock times, distances, opinions, and a true detail used in a wrong sentence. No AI judge is used.
+
+To read what was flagged, set `RECORD_DETAILS=1`. Each example then has **Real problem** and **False alarm** buttons;
+press a pressed button again to remove the mark. A mark is deleted with its record. Requests made before the checks
+existed were not checked.
 
 ## Known limitations
 

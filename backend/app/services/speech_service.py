@@ -121,6 +121,7 @@ def transcribe(audio: bytes, content_type: str, *, env=None, store=None, transpo
         raise SpeechError(422, "I didn't get any sound. Hold the recording a little longer.")
     if store is not None:
         if store.count("stt:groq") >= _daily_limit(env):
+            observe.event("guardrail", "rate_limit", "blocked", bucket="voice_daily")
             raise SpeechError(429, "Today's voice limit is used up. You can still type.")
         store.bump("stt:groq")
     # English only for now: the planner reads English. Other languages need testing first.

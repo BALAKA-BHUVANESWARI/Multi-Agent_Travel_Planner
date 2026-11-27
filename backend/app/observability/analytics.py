@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 ERROR_STATUSES = {"error", "failed", "timeout", "http_error", "network", "unreadable", "schema_invalid"}
 WARNING_STATUSES = {"degraded", "fallback", "blocked", "rejected", "gave_up", "skipped", "rate_limited",
-                    "not_possible", "refused", "warnings", "blocking", "not_configured"}
+                    "not_possible", "refused", "warnings", "blocking", "not_configured", "flagged"}
 RUN_STATUSES = ("ok", "needs_info", "blocked", "refused", "rate_limited", "failed")
 KINDS = ("plan", "approve", "chat", "voice", "explore", "photos", "cancel")
 PERIODS = {"today": 1, "7d": 7, "30d": 30, "all": None}
@@ -497,7 +497,7 @@ def log_entries(data: Data, texts: dict) -> list[dict]:
     return sorted(entries, key=lambda e: e["time"], reverse=True)
 
 
-def _texts_by_step(store, data: Data) -> dict:
+def texts_by_step(store, data: Data) -> dict:
     found: dict = {}
     if store is None:
         return found
@@ -510,7 +510,7 @@ def _texts_by_step(store, data: Data) -> dict:
 
 def logs(store, data: Data, search: str = "", level: str = "", type_: str = "", limit: int = 200,
          clip: int = 600) -> dict:
-    entries = log_entries(data, _texts_by_step(store, data))
+    entries = log_entries(data, texts_by_step(store, data))
     types = sorted({e["type"] for e in entries})
     if level:
         entries = [e for e in entries if e["level"] == level]

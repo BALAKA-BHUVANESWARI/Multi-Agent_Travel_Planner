@@ -1,4 +1,5 @@
-"""The evaluation dashboard's requests: sign-in, the numbers for each tab, and downloads. Read-only.
+"""The evaluation dashboard's requests: sign-in, the numbers for each tab, and downloads. It only reads, except for
+the owner's "real problem" / "false alarm" mark on a flagged fact check.
 
 The dashboard is off until .env has DASHBOARD=1 and a DASHBOARD_PASSWORD of at least 8 characters. Signing in gives
 a temporary token that is kept in memory (a restart signs everyone out) and sent with each request. Dashboard
@@ -8,19 +9,21 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import threading
 import time
 from datetime import datetime
 
 from app.core.rate_limit import RateLimited, RateLimiter
-from app.observability import analytics, reports, settings
+from app.observability import analytics, reports, safety, settings
 from app.observability.store import RecordStore
 from app.services.trip_service import ApiError, PlannerService
 
 SESSION_SECONDS = 12 * 3600
 MAX_SESSIONS = 20
-EXPORTS = ("requests", "agents", "ai_calls", "lookups", "logs")
+EXPORTS = ("requests", "agents", "ai_calls", "lookups", "logs", "safety_events", "fact_checks")
+_SPAN_ID = re.compile(r"[0-9a-f]{8,32}")
 MAX_EXPORT_ROWS = 20_000
 LOG_LEVELS = ("", "error", "warning", "info")
 
@@ -141,7 +144,7 @@ class DashboardService:
             if found is None:
                 raise ApiError(404, "That request is not in the records (it may have expired).")
             return found
-        views = ("overview", "agents", "ai", "runs", "retrieval", "logs")
+        views = ("overview", "agents", "ai", "runs", "retrieval", "logs", "guardrails", "factchecks")
         if view not in views:
             raise ApiError(404, "not found")
         data = analytics.Data.load(store, filters)
@@ -156,11 +159,33 @@ class DashboardService:
             return analytics.run_list(data, _number(query, "limit", 100, 2000))
         if view == "retrieval":
             return analytics.retrieval(data)
+        if view == "guardrails":
+            texts = {k: v for k, v in analytics.texts_by_step(store, data).items() if isinstance(k, str)}
+            return {**safety.guardrails(data, texts), "recording": self._recording()}
+        if view == "factchecks":
+            only = str(query.get("show") or "")
+            if only not in ("", "unmarked", *safety.VERDICTS):
+                raise ApiError(422, "unknown choice")
+            return {**safety.fact_checks(store, data, only), "recording": self._recording()}
         level = str(query.get("level") or "")
         if level not in LOG_LEVELS:
             raise ApiError(422, "unknown level")
         return analytics.logs(store, data, str(query.get("q") or "")[:100], level, str(query.get("type") or "")[:40],
                               _number(query, "limit", 200, 2000))
+
+    def mark(self, body, token: str | None = None) -> dict:
+        """Mark a flagged fact check as a real problem or a false alarm ("" removes the mark)."""
+        self._signed_in(token)
+        if not isinstance(body, dict):
+            raise ApiError(422, "body must be a JSON object")
+        span_id, verdict = body.get("id"), body.get("verdict")
+        if not isinstance(span_id, str) or not _SPAN_ID.fullmatch(span_id) \
+                or verdict not in ("", *safety.VERDICTS):
+            raise ApiError(422, f"send 'id' and 'verdict' ({', '.join(safety.VERDICTS)}, or empty)")
+        store = self._store()
+        if store is None or not store.set_mark(span_id, verdict):
+            raise ApiError(404, "That check is not in the records (it may have expired).")
+        return {"ok": True, "id": span_id, "verdict": verdict}
 
     def export(self, query: dict, token: str | None = None) -> tuple[bytes, str, str]:
         """(file, content type, file name) for the records that match the filters."""
@@ -182,6 +207,10 @@ class DashboardService:
             rows = analytics.ai_calls(data)
         elif what == "lookups":
             rows = analytics.lookup_rows(data)
+        elif what == "safety_events":
+            rows = safety.event_rows(data)
+        elif what == "fact_checks":
+            rows = safety.check_rows(store, data)
         else:
             level = str(query.get("level") or "")
             rows = analytics.logs(store, data, str(query.get("q") or "")[:100], level if level in LOG_LEVELS else "",

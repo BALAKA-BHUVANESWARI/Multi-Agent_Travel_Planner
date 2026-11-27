@@ -4,14 +4,14 @@ import { KINDS, STATUSES, STEP_TYPES, count, facts, ms, sourceName, when, words 
 
 const COLORS = {
   agent: "var(--series-1)", tool: "var(--series-2)", retrieval: "var(--series-3)", retrieval_wait: "var(--series-3)",
-  llm: "var(--series-4)", llm_call: "var(--series-4)", voice: "var(--series-4)", guardrail: "var(--series-5)",
+  llm: "var(--series-4)", llm_call: "var(--series-4)", voice: "var(--series-4)", guardrail: "var(--series-5)", fact_check: "var(--series-5)",
 };
 const LEGEND = [
   { key: "agent", label: "Agent", color: COLORS.agent },
   { key: "tool", label: "Tool call", color: COLORS.tool },
   { key: "retrieval", label: "Data lookup", color: COLORS.retrieval },
   { key: "llm", label: "AI and voice", color: COLORS.llm },
-  { key: "guardrail", label: "Safety check", color: COLORS.guardrail },
+  { key: "guardrail", label: "Safety or fact check", color: COLORS.guardrail },
 ];
 
 const outcome = (run) => run.attrs.outcome || run.attrs.reply_source || run.attrs.error || "";

@@ -5,7 +5,7 @@ import { count, words } from "./format.js";
 // ---------------------------------------------------------------- status: always a mark and a word, never colour alone
 const TONES = {
   good: ["ok", "cached", "booked", "approved"],
-  warning: ["degraded", "fallback", "blocked", "needs_info", "warnings", "blocking", "not_possible", "warning", "rejected"],
+  warning: ["degraded", "fallback", "blocked", "needs_info", "warnings", "blocking", "not_possible", "warning", "rejected", "flagged"],
   serious: ["refused", "rate_limited", "gave_up"],
   critical: ["error", "failed", "timeout", "http_error", "network", "unreadable", "schema_invalid"],
 };

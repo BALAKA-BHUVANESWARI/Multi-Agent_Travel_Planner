@@ -1,4 +1,4 @@
-"""The evaluation dashboard (read-only, behind its own password)."""
+"""The evaluation dashboard (behind its own password; it only reads, apart from the owner's fact-check marks)."""
 from __future__ import annotations
 
 from typing import Optional
@@ -28,6 +28,10 @@ def create_router(service: PlannerService) -> APIRouter:
     @router.post("/logout")
     def logout(authorization: Optional[str] = Header(None)):
         return board.logout(bearer(authorization))
+
+    @router.post("/mark")
+    def mark(body: Optional[dict] = Body(None), authorization: Optional[str] = Header(None)):
+        return JSONResponse(board.mark(body, bearer(authorization)), headers=NO_STORE)
 
     @router.get("/export")
     def export(request: Request, authorization: Optional[str] = Header(None)):
