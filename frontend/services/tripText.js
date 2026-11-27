@@ -18,7 +18,11 @@ export const withDestination = (request, name) =>
   request.replace(/\s*\|\s*(destination|travel):[^|]*/gi, "") + " | destination: " + name;
 
 export const withTravelMode = (request, mode) =>
-  request.replace(/\s*\|\s*travel:.*$/i, "") + (mode === "any" ? " | travel: any mode" : " | travel: by " + mode);
+  request.replace(/\s*\|\s*travel:[^|]*/gi, "") + (mode === "any" ? " | travel: any mode" : " | travel: by " + mode);
+
+// the answer to "Did you mean ...?": which place the typed name stands for (the typed name itself keeps it)
+export const withPlaceChoice = (request, typed, chosen) =>
+  `${request} | place: ${typed.replace(/[|=]/g, " ")} = ${chosen.replace(/[|=]/g, " ")}`;
 
 // rows of the "planning for a group" form -> what the API expects; empty rows are left out
 export const readGroup = (rows) => {

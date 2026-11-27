@@ -65,8 +65,14 @@ def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict,
             notes[:] = [f"Trip now starts {start.isoformat()}." if "travel dates" in n else n for n in notes]
     if "destination" in ch:
         geo, why = find_place(ch["destination"], deps)
+        meant = geo and geo_mod.meant_instead(ch["destination"], geo)
         if geo is None:
             reject("destination", "destination to", why)
+        elif meant:
+            reject("destination", "destination to",
+                   f"I only found “{ch['destination']}” as a very small place: {geo_mod.full_label(geo)}. "
+                   f"For {geo_mod.full_label(meant)}, type “change destination to {meant['name']}”. If you really "
+                   "mean the small place, start a new plan.")
         elif geo["slug"] == c["destination"]:
             reject("destination", "destination to", f"The trip already goes to {geo['name']}.")
         elif geo["slug"] == c["origin"] or (c.get("origin_geo")

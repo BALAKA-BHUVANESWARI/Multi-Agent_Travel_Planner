@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 
 from app.core.utils import fmt_inr
+from app.data import gazetteer
 from app.data.curated_destinations import place_name
 from app.graph.state import entry
 from app.services import geo_service as geo_mod
 from app.services import request_parser as intake_mod
 from app.tools.client import call_with_retry
 from app.tools.errors import ToolError
+from app.observability import recorder as observe
 
 _PLACE_TEXT = re.compile(r"^[A-Za-z\u00c0-\u024f][A-Za-z\u00c0-\u024f .'\u2019-]{1,59}$")
 _WANTS_IDEAS = re.compile(r"\b(suggest|recommend|somewhere|anywhere|any place|where (?:should|can|could|do) "
@@ -34,6 +36,20 @@ def _place_candidates(parsed: dict, role: str) -> list[str]:
     return out
 
 
+def _answered(parsed: dict, q: str) -> tuple[str, bool]:
+    """The name to look up for ``q`` after the traveller's "Did you mean" answer, and whether they insisted on
+    the name they typed."""
+    chosen = (parsed.get("place_answers") or {}).get(gazetteer.normalize(q))
+    if not chosen:
+        return q, False
+    return chosen, gazetteer.normalize(chosen) == gazetteer.normalize(q)
+
+
+def doubt_message(check: dict) -> str:
+    return (f"I only found “{check['typed']}” as a very small place: {check['found_label']}. "
+            f"Did you mean {check['suggested_label']}? Reply “{check['suggested']}” or “{check['typed']}”.")
+
+
 def resolve_places(parsed: dict, deps, logs: list) -> None:
     """Turn place names into resolved places (coordinates, country, price level).
     Known places (curated + offline list) are resolved locally; anything else needs the live
@@ -43,7 +59,7 @@ def resolve_places(parsed: dict, deps, logs: list) -> None:
     for role in ("origin", "destination"):
         for q in _place_candidates(parsed, role):
             try:
-                _set_place(parsed, role, geo_mod.resolve(q, live=False))
+                _set_place(parsed, role, geo_mod.resolve(_answered(parsed, q)[0], live=False))
                 break
             except geo_mod.PlaceError:
                 continue                                 # not a known place: may need the live lookup
@@ -54,12 +70,21 @@ def resolve_places(parsed: dict, deps, logs: list) -> None:
             continue
         error = None
         for q in _place_candidates(parsed, role):
+            name, insisted = _answered(parsed, q)
             try:
-                res = call_with_retry(deps.tools, "resolve_place", sleep=deps.sleep, query=q)
+                res = call_with_retry(deps.tools, "resolve_place", sleep=deps.sleep, query=name)
             except ToolError as e:
                 error = error or str(e)
-                logs.append(entry("intake", f"could not resolve {role} '{q}'"))
+                logs.append(entry("intake", f"could not resolve {role} '{name}'"))
                 continue
+            meant = None if insisted else geo_mod.meant_instead(name, res["geo"])
+            if meant:                                    # probably misspelled or misheard: ask, never guess
+                parsed["place_check"] = {"role": role, "typed": name, "suggested": meant["name"],
+                                         "suggested_label": geo_mod.full_label(meant),
+                                         "found_label": geo_mod.full_label(res["geo"])}
+                observe.event("guardrail", "place_check", "warnings", role=role)
+                logs.append(entry("intake", f"asked whether {role} meant a better-known place"))
+                return
             _set_place(parsed, role, res["geo"])
             logs.append(entry("intake", f"resolved {role} '{q}' -> {res['geo']['name']}, "
                                         f"{res['geo']['country']} ({res['geo']['source']})"))

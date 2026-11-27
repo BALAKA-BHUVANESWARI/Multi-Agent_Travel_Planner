@@ -353,6 +353,18 @@ def split_destination_choice(text: str) -> tuple[str, str | None]:
     return _DEST_MARKER.sub(" ", text).strip(), found[-1].strip() or None
 
 
+_PLACE_MARKER = re.compile(r"\|\s*place:\s*([^|=]{1,60})=\s*([^|]{1,60})", re.I)
+
+
+def split_place_answers(text: str) -> tuple[str, dict[str, str]]:
+    """After "Did you mean ...?" the page and the chat append ' | place: <typed> = <chosen>'. Returns the text
+    without those markers and {typed name as a lookup key: chosen name}. Choosing the typed name itself means
+    the traveller really wants that place."""
+    answers = {gazetteer.normalize(typed): chosen.strip() for typed, chosen in _PLACE_MARKER.findall(text)
+               if chosen.strip()}
+    return (_PLACE_MARKER.sub(" ", text).strip(), answers) if answers else (text, {})
+
+
 def parse_scope(text: str) -> str:
     """Where suggestions may be: 'abroad', 'india' or 'any'."""
     low = text.lower()
@@ -366,6 +378,7 @@ def parse_scope(text: str) -> str:
 def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     """Return {constraints, missing, invalid, assumptions}. ``group_size``: how many people filled in the
     group-preferences form (0 when it was not used)."""
+    text, place_answers = split_place_answers(text)             # first: a chosen name must not be read as text
     text, chosen = split_destination_choice(text)
     origin, dest, texts = parse_places(text)
     if chosen:
@@ -409,7 +422,7 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     missing = [k for k in ("origin", "destination", "days", "budget")
                if constraints[k] is None and k not in texts]
     return {"constraints": constraints, "missing": missing, "invalid": invalid, "assumptions": assumptions,
-            "texts": texts}
+            "texts": texts, "place_answers": place_answers}
 
 
 _QUESTION = {

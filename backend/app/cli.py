@@ -39,6 +39,7 @@ def run(argv: list[str] | None = None, out=sys.stdout) -> int:
     args = ap.parse_args(argv)
 
     config.load_env()
+    from app.services.chat_service import complete_request
     from app.graph.deps import Deps
     from app.graph.engine import make_planner
     deps = Deps.default(db=args.db, tools_mode=args.tools,
@@ -64,7 +65,7 @@ def run(argv: list[str] | None = None, out=sys.stdout) -> int:
             more = _ask("> ")
             if not more:
                 break
-            text = f"{text}. {more}"
+            text = complete_request(state, more) if state.get("place_check") else f"{text}. {more}"
             state = planner.start(text)
 
     shown = None

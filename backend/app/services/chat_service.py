@@ -14,6 +14,7 @@ import json
 import re
 
 from app.core.utils import fmt_inr
+from app.data import gazetteer
 from app.observability import recorder as observe
 from app.services import request_parser as parser
 from app.services.feedback_parser import parse_feedback
@@ -88,10 +89,31 @@ def _with_marker(request: str, marker: str, value: str) -> str:
     return f"{request} | {marker}: {value}"
 
 
+def _place_answer(check: dict, answer: str) -> str | None:
+    """The place chosen in reply to "Did you mean ...?": the suggestion, the name as typed, or another name."""
+    said = re.sub(r"^(?:yes|no)\b[\s,]*|^(?:i (?:mean|meant)|it'?s|it is)\s+", "", answer.strip(), flags=re.I)
+    said = _LEAD.sub("", said).replace("=", " ").strip(" .!,?")
+    if not said:
+        return check["suggested"] if re.match(r"yes\b", answer.strip(), re.I) else None
+    low = f"{gazetteer.normalize(said)} "
+    for name in (check["suggested"], check["typed"]):           # "Goa", "Goa, India"
+        if low.startswith(f"{gazetteer.normalize(name)} "):
+            return name
+    if re.fullmatch(r"yeah|yep|correct|right|sure|ok(?:ay)?", said, re.I):
+        return check["suggested"]
+    return said if _PLACE.match(said) and len(said.split()) <= 4 else None
+
+
 def complete_request(state: dict, text: str) -> str:
     """The earlier request plus what the traveller has just added to it."""
     request = state.get("request") or ""
     answer = " ".join(text.replace("|", " ").split()).strip(" .!")
+    check = state.get("place_check")
+    if check:                                                  # the answer to "Did you mean ...?"
+        chosen = _place_answer(check, answer)
+        if chosen:
+            typed = check["typed"].replace("=", " ").replace("|", " ")
+            return f"{request} | place: {typed} = {chosen}"
     options = state.get("travel_options")
     if options:
         low = answer.lower()
@@ -313,6 +335,10 @@ def _plan_suggestions(state: dict) -> list[str]:
 
 
 def _question_choices(state: dict) -> list[dict]:
+    check = state.get("place_check")
+    if check:
+        return [{"label": check["suggested_label"], "send": check["suggested"]},
+                {"label": check["found_label"], "send": check["typed"]}]
     if state.get("travel_options"):
         picks = [{"label": f"{o['label']} · about {fmt_inr(o['price_pp'])} each", "send": o["label"]}
                  for o in state["travel_options"] if o.get("available")]
@@ -321,6 +347,8 @@ def _question_choices(state: dict) -> list[dict]:
 
 
 def _asking(state: dict) -> str:
+    if state.get("place_check"):
+        return f"{str(state.get('message', '')).split(' Reply ')[0]} Pick one below, or type another place."
     if state.get("travel_options"):
         lead = str(state.get("message", "")).split("\n")[0].split(" Reply with")[0]
         return f"{lead} Pick one below, or type it."

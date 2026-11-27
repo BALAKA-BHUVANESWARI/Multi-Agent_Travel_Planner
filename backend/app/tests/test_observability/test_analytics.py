@@ -267,3 +267,24 @@ def test_the_latest_eval_scores_are_read_from_the_report(tmp_path):
     assert (out["prompts"], out["fixed_date"], out["judge_mean"]) == (23, "2026-11-24", 3.5)
     assert reports.eval_scores(tmp_path / "missing.md") is None
     assert len(reports.eval_scores()["rows"]) >= 8                       # the project's own report still parses
+
+
+def test_only_an_answered_lookup_counts_as_from_cache():
+    book = Book()
+    run = book.run()
+    # older records: a glance at the live-price usage counter was counted as a cache hit on lookups that failed
+    for status in ("error", "skipped", "timeout"):
+        book.span(run, "retrieval", "live_prices.page", status, error="LiveUnavailable", disk_cache_hits=1)
+    book.span(run, "retrieval", "live_prices.page", "ok", disk_cache_hits=1)
+    book.span(run, "retrieval", "live_prices.page", "ok", disk_cache_hits=1, page_reads=1)       # read the page
+    row, = analytics.retrieval(book.data())["sources"]
+    assert (row["lookups"], row["from_cache"]) == (5, 1)
+
+
+def test_a_known_reason_is_shown_instead_of_the_error_class():
+    book = Book()
+    run = book.run()
+    book.span(run, "retrieval", "live_prices.page", "error", error="LiveUnavailable", reason="tavily_limit")
+    book.span(run, "retrieval", "openstreetmap.places", "error", error="URLError")
+    why = {p["source"]: p["error"] for p in analytics.retrieval(book.data())["problems"]}
+    assert why == {"live_prices.page": "tavily_limit", "openstreetmap.places": "URLError"}

@@ -13,7 +13,8 @@ def resolve_place(query: str) -> dict:
     try:
         g = geo_mod.resolve(query)
     except geo_mod.PlaceError as e:
-        raise ToolError(str(e), retryable=e.retryable)
+        # "no such place" is an answer; only a lookup service that could not be reached is a failed tool
+        raise ToolError(str(e), retryable=e.retryable, not_possible=not e.retryable)
     attribution = [geo_mod.ATTRIBUTION] if g["source"] == "open-meteo-geocoding" else []
     return {"geo": g, "attribution": attribution}
 

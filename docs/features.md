@@ -126,6 +126,15 @@ Endpoints: `POST /api/v1/emergency` (`{"place": "Bangkok", "nearby": true}`, `{"
 `/documents/tick`), `DELETE /api/v1/trip/{thread_id}/{expenses|documents}/{id}`. MCP tools used: `find_help_nearby`,
 `local_tips`.
 
+## A misspelled or misheard place name
+
+A name typed or spoken one letter wrong can match a real but tiny place: "Gova" is a village of 45 people in Italy.
+When a place found online has fewer than 5,000 people (or no figure) and is one letter off a well-known place, the
+planner asks **"Did you mean Goa, India?"** before planning. Both places are offered, on the page and in the chat, so
+you can still choose the one you typed. Asking to change the destination to such a name does not move the trip; it
+tells you what to type. "One letter off" means one letter added, left out or changed, or two neighbours swapped, so a
+worse misspelling is not caught. The "Explore more places" search does not ask.
+
 ## World destinations and exploring any place
 
 * The **World Destinations** page (`#world`) shows 15 hand-picked places. It is not an official ranking, and the best
@@ -289,8 +298,10 @@ spreadsheet could run as a formula are written as text).
 How to read it:
 
 * Plan times count only plans that reached "awaiting approval". A figure made from fewer than 5 values is marked.
-* A "not possible" tool answer (no train across the sea) is not an error, and a lookup that found nothing is not
-  counted as failed.
+* A "not possible" tool answer (no train across the sea, or no place by that name) is not an error, and a lookup that
+  found nothing is not counted as failed.
+* A live price page that was never read because the app's daily limit was used up is **skipped** (`daily limit`), not
+  failed. Records made before this change still show it as failed. Only answered lookups count as "From cache".
 * Daily limits are what this app counted today against its own settings. Providers have their own limits, and the app
   cannot see a bill.
 * Test scores come from `backend/evals/report.md`, so they change only when `python evals/run_evals.py` is run again.
@@ -318,7 +329,7 @@ How to read it:
   sights come from OpenStreetMap and costs are rough estimates. International trips show a warning because visas,
   insurance and currency costs are not included. All money is shown in INR.
 * Place supply is finite: long trips on the `cheapest` tier may leave a few slots empty (a warning says so).
-* Restaurants: for big cities split into districts (Paris) the list comes from the first district pages on Wikivoyage; the public OpenStreetMap server is slow (about 40 s) and runs in the background, so its extra places may only appear on a repeat plan. Hours are as listed on the source; places without a stated diet appear under "menu not specified".
+* Restaurants: for big cities split into districts (Paris) the list comes from the first district pages on Wikivoyage; the public OpenStreetMap server is slow (40 s to 2 minutes) and runs in the background, so its extra places may only appear on a repeat plan. A plan waits for it once (up to 25 s); cheaper re-plans go on without waiting while that search is still running, and a search that found nothing or failed is not repeated for 2 minutes. Hours are as listed on the source; places without a stated diet appear under "menu not specified".
 * Open-Meteo is for non-commercial use; keep the attribution.
 * The mock booking cannot be undone or modified because nothing real happens.
 

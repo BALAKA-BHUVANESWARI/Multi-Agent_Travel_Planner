@@ -40,7 +40,7 @@ export default function Overview({ data }) {
               <Tile label="Slowest" value={ms(plan.max_ms)} />
               <Tile label="Plans timed" value={count(plan.count)} note={<Small n={plan.count} />} />
             </div>
-            <h3>Last {data.recent_plans.length} full plans, oldest first</h3>
+            <h3>{data.recent_plans.length === 1 ? "The one full plan so far" : `Last ${data.recent_plans.length} full plans, oldest first`}</h3>
             <Columns
               data={data.recent_plans.map((p, i) => ({ label: planLabels[i], title: `${when(p.started)}${p.days ? ` · ${p.days} days` : ""}`, values: { time: p.duration_ms / 1000 } }))}
               series={[{ key: "time", label: "Time", color: "var(--series-1)" }]}

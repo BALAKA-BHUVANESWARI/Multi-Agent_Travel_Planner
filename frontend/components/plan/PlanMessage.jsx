@@ -4,6 +4,9 @@ import Banner from "../common/Banner.jsx";
 
 function messageFor(result) {
   if (NO_PLAN_STATUSES.includes(result.status)) {
+    if (result.place_check) {
+      return ["warn", String(result.message).split(" Reply ")[0] + " Pick one below."];
+    }
     if (result.travel_options?.length) {
       const lead = String(result.message || "").split("\n")[0].split(" Reply with")[0] + " Pick one below.";
       return ["warn", lead];

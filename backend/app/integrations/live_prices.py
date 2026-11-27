@@ -44,7 +44,12 @@ _lock = threading.Lock()
 
 
 class LiveUnavailable(Exception):
-    """Live prices could not be had; the message is a short reason that is safe to show the user."""
+    """Live prices could not be had; the message is a short reason that is safe to show the user.
+    ``code`` is the same reason as a fixed word, for the records."""
+
+    def __init__(self, message: str, code: str = ""):
+        super().__init__(message)
+        self.code = code
 
 
 # --------------------------------------------------------------------------- network
@@ -77,17 +82,17 @@ def _now() -> str:
 def _read_page(url: str) -> str:
     key = config.tavily_key()
     if not key:
-        raise LiveUnavailable("no Tavily key is set")
+        raise LiveUnavailable("no Tavily key is set", "no_key")
     try:
         status, text = _post(TAVILY_EXTRACT, {"urls": [url], "extract_depth": "advanced", "timeout": 60}, key)
     except Exception as e:                                                       # noqa: BLE001
-        raise LiveUnavailable(f"Tavily could not be reached ({type(e).__name__})") from None
+        raise LiveUnavailable(f"Tavily could not be reached ({type(e).__name__})", "tavily_unreachable") from None
     if status in (401, 403):
-        raise LiveUnavailable("Tavily rejected the key (check TAVILY_API_KEY)")
+        raise LiveUnavailable("Tavily rejected the key (check TAVILY_API_KEY)", "tavily_rejected_key")
     if status in (402, 429, 432, 433):
-        raise LiveUnavailable("Tavily is rate limiting or the plan's credits are used up")
+        raise LiveUnavailable("Tavily is rate limiting or the plan's credits are used up", "tavily_limit")
     if status != 200:
-        raise LiveUnavailable(f"Tavily answered HTTP {status}")
+        raise LiveUnavailable(f"Tavily answered HTTP {status}", "tavily_http_error")
     try:
         results = json.loads(text).get("results") or []
         raw = results[0]["raw_content"] if results else ""
@@ -111,7 +116,7 @@ def _reserve(credits: int = CREDITS_PER_PAGE) -> None:
     with _lock:
         used = credits_used_today()
         if used + credits > cap:
-            raise LiveUnavailable(f"today's live-price limit ({cap} Tavily credits) is used up")
+            raise LiveUnavailable(f"today's live-price limit ({cap} Tavily credits) is used up", "daily_limit")
         cache.put(_usage_key(), used + credits)
 
 
@@ -125,17 +130,29 @@ def get_page(url: str, ok, attempts: int = 2) -> tuple[str, str, bool]:
         hit = cache.get(key, ttl=ttl)
         if isinstance(hit, dict) and ok(hit.get("text", "")):
             return hit["text"], hit.get("fetched_at", ""), True
-    for _ in range(max(1, attempts)):
-        _reserve()
+    for attempt in range(max(1, attempts)):
+        try:
+            _reserve()
+        except LiveUnavailable as e:
+            if not attempt:              # nothing was read: not a failed lookup, one the planner chose not to make
+                observe.current_span().fail("skipped", reason=e.code)
+            else:
+                observe.current_span().set(reason=e.code)
+            raise
         observe.current_span().add("page_reads")
         observe.current_span().add("credits", CREDITS_PER_PAGE)
-        text = _read_page(url)
+        try:
+            text = _read_page(url)
+        except LiveUnavailable as e:
+            observe.current_span().set(reason=e.code)
+            raise
         if ok(text):
             fetched = _now()
             if ttl > 0:
                 cache.put(key, {"text": text, "fetched_at": fetched})
             return text, fetched, False
-    raise LiveUnavailable("the Google page came back without any results")
+    observe.current_span().set(reason="no_results_on_page")
+    raise LiveUnavailable("the Google page came back without any results", "no_results_on_page")
 
 
 @observe.retrieval("live_prices.exchange_rate", count=lambda result: 1)

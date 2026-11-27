@@ -17,6 +17,7 @@ from app.observability import recorder as observe
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 ATTRIBUTION = "Place lookup by Open-Meteo.com geocoding (GeoNames, CC BY 4.0)"
 MIN_NAME_SIMILARITY = 0.72
+TINY_PLACE = 5000          # fewer people than this (or no figure at all): worth checking a near-miss spelling
 
 # Rough price level relative to India = 1.0 (hotels, food, entry fees). Estimates only.
 COUNTRY_COST = {
@@ -98,6 +99,53 @@ def _from_result(r: dict) -> dict:
 def _is_region(r: dict) -> bool:
     fc = str(r.get("feature_code") or "")
     return fc.startswith("PCL") or fc.startswith("ADM")
+
+
+def _one_slip(a: str, b: str) -> bool:
+    """One letter added, left out or changed, or two neighbouring letters swapped."""
+    if a == b or abs(len(a) - len(b)) > 1:
+        return False
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    if len(a) == len(b):
+        swapped = i + 1 < len(a) and a[i] == b[i + 1] and a[i + 1] == b[i] and a[i + 2:] == b[i + 2:]
+        return swapped or a[i + 1:] == b[i + 1:]
+    short, long = sorted((a, b), key=len)
+    return short[i:] == long[i + 1:]
+
+
+def _known_names():
+    for slug, aliases in ALIASES.items():
+        for name in (slug, *aliases):
+            yield gazetteer.normalize(name), slug
+    for name, entry in gazetteer.scan_names():
+        yield name, entry["slug"]
+
+
+def meant_instead(query: str, geo: dict) -> dict | None:
+    """The well-known place that was probably meant, when a typed or spoken name only matched a tiny place online
+    and is one slip away from it ("Gova" matches a hamlet in Italy; "Goa" was meant). None: no reason to ask."""
+    if geo.get("source") != "open-meteo-geocoding" or (geo.get("population") or 0) >= TINY_PLACE:
+        return None
+    typed = gazetteer.normalize(query)
+    found: dict[str, dict] = {}
+    for name, slug in _known_names():
+        if len(name) < 4 and name != slug:        # three-letter aliases are airport codes ("blr" is not "Bir")
+            continue
+        if len(name) >= 3 and _one_slip(typed, name):
+            entry = gazetteer.lookup(slug)
+            known = from_catalog(slug) if _curated_slug(slug) else _from_gazetteer(entry) if entry else None
+            if known:
+                found[known["slug"]] = known
+    if not found:
+        return None
+    return max(found.values(), key=lambda g: (g["curated"], g["population"]))
+
+
+def full_label(geo: dict) -> str:
+    """'Gova, Emilia-Romagna, Italy'."""
+    return ", ".join(dict.fromkeys(p for p in (geo.get("name"), geo.get("admin1"), geo.get("country")) if p))
 
 
 _CACHE: dict[str, dict] = {}

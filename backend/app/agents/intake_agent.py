@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from app.agents.destination_agent import (
     _PLACE_TEXT,
     _WANTS_IDEAS,
+    doubt_message,
     find_suggestions,
     resolve_places,
     suggestion_message,
@@ -124,6 +125,10 @@ def intake_node(state: dict, deps) -> dict:
     parsed["assumptions"] = parsed["assumptions"] + remembered
     resolve_places(parsed, deps, logs)
     c = parsed["constraints"]
+    if parsed.get("place_check"):
+        check = parsed["place_check"]
+        return {"constraints": c, "status": "needs_info", "message": doubt_message(check), "place_check": check,
+                "log": logs}
     for role in ("origin", "destination"):                 # a place that is still unresolved is "missing"
         if c[role] is None and role not in parsed["invalid"] and role not in parsed["missing"]:
             parsed["missing"].append(role)

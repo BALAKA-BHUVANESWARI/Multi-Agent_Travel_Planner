@@ -37,6 +37,8 @@ def _search_places_generated(destination: str, d: dict, geo: dict, prefs: list[s
         # short grace period; it keeps running in the background and fills the cache for next time.
         enough = len(wp_elements) + len(wv_elements) >= ENOUGH_FAST_SIGHTS
         osm_elements = safe_result(f_osm, [], timeout=OSM_GRACE if enough else None, label="openstreetmap.places")
+        if not f_osm.done():
+            osm.gave_up_waiting("places", d["lat"], d["lon"], radius)
         pool.shutdown(wait=False)
         elements = osm_elements + wv_elements + wp_elements       # first source wins when names repeat
     candidates, nearby, quality = dynamic.build_candidates(g, elements)
@@ -110,6 +112,8 @@ def search_dining(destination: str, destination_geo: dict | None = None) -> dict
     f_osm = pool.submit(observe.carry(osm.restaurant_elements), d["lat"], d["lon"], radius)
     wv = safe_result(f_wv, [], label="wikivoyage.restaurants")
     osm_els = safe_result(f_osm, [], timeout=DINING_GRACE, label="openstreetmap.restaurants")
+    if not f_osm.done():
+        osm.gave_up_waiting("restaurants", d["lat"], d["lon"], radius)
     pool.shutdown(wait=False)
     result = dining.build_dining(wv + osm_els, {"lat": d["lat"], "lon": d["lon"]})
     if not (result["veg"] or result["nonveg"] or result["other"]):

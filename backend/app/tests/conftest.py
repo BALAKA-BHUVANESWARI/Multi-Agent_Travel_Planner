@@ -66,11 +66,9 @@ def _isolated_place_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("OBSERVABILITY_DB", str(tmp_path / "observability.db"))
     for name in ("OBSERVABILITY", "RECORD_DETAILS", "RECORD_KEEP_DAYS", "RECORD_DETAIL_KEEP_DAYS"):
         monkeypatch.delenv(name, raising=False)
-    osm._PLACES_CACHE.clear()
-    osm._FAILED.clear()
+    osm.forget_recent()
     yield
-    osm._PLACES_CACHE.clear()
-    osm._FAILED.clear()
+    osm.forget_recent()
 
 
 @pytest.fixture

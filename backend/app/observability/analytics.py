@@ -403,9 +403,13 @@ def trace(store, run_id: str) -> dict | None:
 
 
 # ------------------------------------------------------------------ retrieval
-def _from_cache(attrs: dict) -> bool:
+def _from_cache(step: dict) -> bool:
+    """Whether a lookup was answered from saved results. Only an answered lookup can be: one that failed or was
+    skipped got nothing from anywhere (older records also counted a glance at a usage counter as a cache hit)."""
+    attrs = step["attrs"]
     hits = attrs.get("memory_cache_hits", 0) + attrs.get("disk_cache_hits", 0)
-    return hits > 0 and not attrs.get("page_reads") and not attrs.get("server_attempts")
+    return (step["status"] in ("ok", "empty") and hits > 0
+            and not attrs.get("page_reads") and not attrs.get("server_attempts"))
 
 
 def lookup_rows(data: Data) -> list[dict]:
@@ -416,8 +420,8 @@ def lookup_rows(data: Data) -> list[dict]:
         kind = "gave_up_waiting" if s["type"] == "retrieval_wait" else "lookup" if is_lookup(s) else "fallback"
         rows.append({"run_id": run["id"], "request": run["kind"], "time": at(run["started"], s["start_ms"]),
                      "source": s["name"], "kind": kind, "status": s["status"], "duration_ms": s["duration_ms"],
-                     "results": s["attrs"].get("results"), "from_cache": _from_cache(s["attrs"]),
-                     "error": s["attrs"].get("error") or s["attrs"].get("reason") or "",
+                     "results": s["attrs"].get("results"), "from_cache": _from_cache(s),
+                     "error": s["attrs"].get("reason") or s["attrs"].get("error") or "",
                      "http_status": s["attrs"].get("http_status")})
     return sorted(rows, key=lambda r: r["time"], reverse=True)
 

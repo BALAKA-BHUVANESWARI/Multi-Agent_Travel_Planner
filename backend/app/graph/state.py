@@ -49,6 +49,7 @@ class TripState(TypedDict, total=False):
     pending_approval: Optional[dict]
     food_boost: bool
     travel_options: list        # modes offered when the request does not say how to travel
+    place_check: dict           # "Did you mean ...?" for a name that only matched a tiny place
     suggestions: list           # destinations offered when the request names none
     alternatives: dict          # other destinations to compare with the planned one
     group: list                 # [{name, likes, avoid}] for a group trip

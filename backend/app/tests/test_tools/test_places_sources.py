@@ -100,8 +100,12 @@ def test_a_failed_lookup_is_not_retried_straight_away(monkeypatch):
     assert osm.place_elements(1.0, 2.0, 8000, post=lambda q: _elements()) != []     # later, it tries again
 
 
-def test_empty_answers_are_never_cached():
+def test_empty_answers_are_never_cached(monkeypatch):
     assert osm.place_elements(5.0, 6.0, 8000, post=lambda q: {"elements": []}) == []
+    # a replan a moment later does not search again ...
+    assert osm.place_elements(5.0, 6.0, 8000, post=lambda q: pytest.fail("just answered: nothing there")) == []
+    # ... but nothing is saved: after the short while, or after a restart, it is asked again
+    monkeypatch.setattr(osm.time, "monotonic", lambda: 1e9)
     assert osm.place_elements(5.0, 6.0, 8000, post=lambda q: _elements()) != []
 
 

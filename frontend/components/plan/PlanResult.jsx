@@ -1,7 +1,8 @@
 // Whatever the planner answered: a question back (travel mode, destination) or a plan.
 import { NO_PLAN_STATUSES } from "../../services/constants.js";
-import { requestFor, withDestination, withTravelMode } from "../../services/tripText.js";
+import { requestFor, withDestination, withPlaceChoice, withTravelMode } from "../../services/tripText.js";
 import PlaceCards from "./PlaceCards.jsx";
+import PlaceCheck from "./PlaceCheck.jsx";
 import PlanView from "./PlanView.jsx";
 import TravelChoices from "./TravelChoices.jsx";
 
@@ -11,6 +12,13 @@ export default function PlanResult({ result, lastRequest, onPlan, onDecide, onRu
   };
 
   if (NO_PLAN_STATUSES.includes(result.status)) {
+    if (result.place_check) {
+      return (
+        <PlaceCheck check={result.place_check}
+          onPick={(name) => onPlan(withPlaceChoice(result.request || lastRequest, result.place_check.typed, name),
+            result.group)} />
+      );
+    }
     if (result.travel_options?.length) {
       return (
         <TravelChoices options={result.travel_options}

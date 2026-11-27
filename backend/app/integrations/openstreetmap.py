@@ -53,6 +53,42 @@ def _post_with_mirrors(query: str, timeout: float = MIRROR_TIMEOUT, budget: floa
 
 _PLACES_CACHE: dict[tuple, list] = {}
 _FAILED: dict[tuple, float] = {}
+# So that a replan never sits through the same slow lookup again:
+_EMPTY: dict[tuple, float] = {}        # answered "nothing there" a moment ago
+_RUNNING: set[tuple] = set()           # being fetched now
+_GIVEN_UP: set[tuple] = set()          # still being fetched, and a plan has already stopped waiting for it
+
+
+def forget_recent() -> None:
+    """Drop everything remembered about recent lookups (tests)."""
+    for memory in (_PLACES_CACHE, _RESTAURANTS_CACHE, _FAILED, _EMPTY, _RUNNING, _GIVEN_UP):
+        memory.clear()
+
+
+def _skip_for_now(key: tuple) -> list | None:
+    """[] when there is no point asking again yet; None when the lookup should go ahead."""
+    now = time.monotonic()
+    if now - _FAILED.get(key, -1e9) < FAILURE_MEMORY:
+        observe.current_span().fail("skipped", reason="failed_recently")
+        return []
+    if key in _GIVEN_UP:
+        observe.current_span().fail("skipped", reason="still_running")
+        return []
+    if now - _EMPTY.get(key, -1e9) < FAILURE_MEMORY:
+        observe.note_cache(True, "memory")
+        return []
+    return None
+
+
+def gave_up_waiting(kind: str, lat: float, lon: float, radius_m: int) -> None:
+    """A plan stopped waiting for a "places" or "restaurants" lookup. While that lookup is still running, later
+    plans and replans go on without it at once. Its answer is kept as usual when it arrives."""
+    key = (round(lat, 2), round(lon, 2), radius_m)
+    key = ("r",) + key if kind == "restaurants" else key
+    if key in _RUNNING:
+        _GIVEN_UP.add(key)
+        if key not in _RUNNING:                      # it finished in between
+            _GIVEN_UP.discard(key)
 
 
 def places_query(lat: float, lon: float, radius_m: int) -> str:
@@ -81,18 +117,24 @@ def place_elements(lat: float, lon: float, radius_m: int, post: Callable[[str], 
     if cached:
         _PLACES_CACHE[key] = cached
         return cached
-    if time.monotonic() - _FAILED.get(key, -1e9) < FAILURE_MEMORY:
-        observe.current_span().fail("skipped", reason="failed_recently")
-        return []
+    skipped = _skip_for_now(key)
+    if skipped is not None:
+        return skipped
+    _RUNNING.add(key)
     try:
         elements = (post or _post_with_mirrors)(places_query(lat, lon, radius_m)).get("elements", [])
+        if elements:
+            _PLACES_CACHE[key] = elements
+            cache.put(disk_key, elements)
+        else:
+            _EMPTY[key] = time.monotonic()
     except Exception as e:
         observe.problem(e)
         _FAILED[key] = time.monotonic()
         return []
-    if elements:
-        _PLACES_CACHE[key] = elements
-        cache.put(disk_key, elements)
+    finally:
+        _RUNNING.discard(key)
+        _GIVEN_UP.discard(key)
     return elements
 
 
@@ -158,9 +200,11 @@ def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[s
     if cached:
         _RESTAURANTS_CACHE[key] = cached
         return cached
-    if time.monotonic() - _FAILED.get(("r",) + key, -1e9) < FAILURE_MEMORY:
-        observe.current_span().fail("skipped", reason="failed_recently")
-        return []
+    memo = ("r",) + key
+    skipped = _skip_for_now(memo)
+    if skipped is not None:
+        return skipped
+    _RUNNING.add(memo)
     run = post or (lambda q: _post_with_mirrors(q, timeout=60.0, budget=60.0))   # slow but off the critical path
     try:
         elements = run(restaurants_query(lat, lon, radius_m)).get("elements", [])
@@ -168,13 +212,18 @@ def restaurant_elements(lat: float, lon: float, radius_m: int, post: Callable[[s
             more = run(restaurants_query_relaxed(lat, lon, radius_m)).get("elements", [])
             have = {(e.get("type"), e.get("id")) for e in elements}
             elements = elements + [e for e in more if (e.get("type"), e.get("id")) not in have]
+        if elements:                     # saved before the lookup counts as finished, so a replan finds it
+            _RESTAURANTS_CACHE[key] = elements
+            cache.put(disk_key, elements)
+        else:
+            _EMPTY[memo] = time.monotonic()
     except Exception as e:
         observe.problem(e)
-        _FAILED[("r",) + key] = time.monotonic()
+        _FAILED[memo] = time.monotonic()
         return []
-    if elements:
-        _RESTAURANTS_CACHE[key] = elements
-        cache.put(disk_key, elements)
+    finally:
+        _RUNNING.discard(memo)
+        _GIVEN_UP.discard(memo)
     return elements
 
 
