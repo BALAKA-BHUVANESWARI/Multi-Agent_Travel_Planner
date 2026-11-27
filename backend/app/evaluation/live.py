@@ -35,6 +35,7 @@ from app.tools.client import InProcessClient
 MAX_CALLS = 100
 TODAY = date(2026, 11, 24)
 PROVIDERS = ("groq", "gemini", "ollama")
+RATE_WAIT = 60.0                                  # seconds to wait after a provider says "too many requests"
 STOP_AFTER = 3                                    # unanswered cases in a row before a provider is skipped
 GROUPS = ("reading", "ranking", "summary", "chat")
 FIELDS = ("origin", "destination", "days", "budget", "travelers")
@@ -122,6 +123,8 @@ class _Run:
         self.models: dict = {}
         self.silent: dict = {}                     # provider -> unanswered cases in a row
         self.items: list[dict] = []
+        self.limited: set = set()                  # providers whose last answer was "too many requests"
+        self.on_wait = lambda provider, seconds: None
         self.offline = Planner(Deps(tools=InProcessClient(), store=Store(), llm=LLMRouter(env={}), today=TODAY,
                                     sleep=lambda s: None))
 
@@ -129,11 +132,18 @@ class _Run:
         if self.budget.left <= 0:
             self.blocked = True
             raise ProviderError("the call limit for this run is used up", _LIMIT_STATUS)
-        if self.budget.used and self.pause:
+        if self.current in self.limited:           # free plans count per minute: a quick retry only wastes a call
+            self.limited.discard(self.current)
+            self.on_wait(self.current, RATE_WAIT)
+            self.sleep(RATE_WAIT)
+        elif self.budget.used and self.pause:
             self.sleep(self.pause)                 # free plans allow only a few calls a minute
         self.budget.used += 1
         self.calls[self.current] = self.calls.get(self.current, 0) + 1
-        return self.send(url, headers, body, timeout)
+        status, payload = self.send(url, headers, body, timeout)
+        if status == 429:
+            self.limited.add(self.current)
+        return status, payload
 
     def router(self, name: str) -> LLMRouter:
         if name not in self.routers:
@@ -377,7 +387,8 @@ def summarise(items: list[dict], providers: list[str], calls: dict, models: dict
 def run(env, *, providers: list[str], cases: dict | None = None, db: str | None = None, transport=None,
         sleep: Callable[[float], None] = time.sleep, limit: int = MAX_CALLS, pause: float = 2.0, judge: bool = True,
         groups: tuple = GROUPS, on_item: Callable[[dict], None] = lambda item: None,
-        clock: Callable[[], float] = time.monotonic, save: bool = True, seed: int | None = None) -> dict:
+        clock: Callable[[], float] = time.monotonic, save: bool = True, seed: int | None = None,
+        on_wait: Callable[[str, float], None] = lambda provider, seconds: None) -> dict:
     """Run the tests and return the record. With ``save`` it is written after every case, so a stopped run keeps
     what it had."""
     cases = cases or load_cases()
@@ -394,6 +405,7 @@ def run(env, *, providers: list[str], cases: dict | None = None, db: str | None 
             results.save("live", record)
 
     state = _Run(env, store, budget, transport, sleep, pause, on_item, random.Random(seed))
+    state.on_wait = on_wait
     try:
         for name in providers:
             state.router(name)

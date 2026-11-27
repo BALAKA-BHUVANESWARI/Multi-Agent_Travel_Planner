@@ -193,3 +193,23 @@ def test_nothing_goes_into_the_request_records(tmp_path, monkeypatch):
     monkeypatch.setattr(observe, "_finish_span", lambda *a, **k: written.append(a))
     run(tmp_path, Pretend(), cases=small(reading=1, ranking=1, summary=1, chat=1))
     assert written == [] and not observe.active()
+
+
+def test_after_too_many_requests_it_waits_a_minute_before_trying_again(tmp_path):
+    answers = [(429, {"error": {"message": "Rate limit reached in organization `org_01abcdef2345` on tokens per minute"}}),
+               reply({"days": 14})]
+    waits, told = [], []
+    record = live.run(dict(KEYS), providers=["groq"], cases=small(reading=1), db=str(tmp_path / "t.db"),
+                      transport=lambda *a: answers.pop(0), sleep=waits.append, pause=0,
+                      on_wait=lambda provider, seconds: told.append(provider))
+    assert live.RATE_WAIT in waits and told == ["groq"]
+    assert record["calls_used"] == 2 and record["items"][0]["status"] in ("pass", "fail")
+
+
+def test_the_account_name_in_a_provider_error_is_not_saved(tmp_path):
+    def limited(*args):
+        return 429, {"error": {"message": "Rate limit reached in organization `org_01abcdef2345` on tokens"}}
+
+    record = run(tmp_path, limited, cases=small(reading=1))
+    assert "org_***" in record["items"][0]["problems"][0]
+    assert "01abcdef2345" not in json.dumps(results.runs("live"))

@@ -64,6 +64,7 @@ def _error_text(payload, key: str = "") -> str:
     msg = " ".join(str(msg or "").split())
     if key:
         msg = msg.replace(key, "***")
+    msg = re.sub(r"\borg_[A-Za-z0-9]{6,}", "org_***", msg)      # Groq names the account in rate-limit errors
     return msg[:160]
 
 

@@ -193,3 +193,10 @@ def test_nothing_is_checked_when_nothing_is_recorded(make, monkeypatch):
     monkeypatch.setattr(fact_checks, "check_places", lambda *a: pytest.fail("should not run"))
     booked, _ = full_trip(ai_service(make, records=False))
     assert booked["status"] == "booked"
+
+
+def test_a_possessive_place_name_is_the_same_place():
+    plan = ["Old Manali cafes and riverside walk"]
+    for text in ("A stroll through Old Manali’s cafés.", "A stroll through Old Manali's cafés."):
+        assert fact_checks.check_places(text, plan)[0] == [], text
+    assert fact_checks.check_places("See Hadimba Devi’s Temple.", plan)[0]     # still flagged: not in this plan

@@ -91,7 +91,7 @@ def _asked_for(interest: str, text: str) -> bool:
 
 
 def _norm(text: str) -> str:
-    return gazetteer.normalize(text)
+    return gazetteer.normalize(re.sub(r"['’]s\b", "", str(text)))   # "Old Manali’s cafés" names Old Manali
 
 
 def _leaves(value) -> list[str]:

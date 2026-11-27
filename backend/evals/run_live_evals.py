@@ -34,6 +34,11 @@ def show_item(item: dict) -> None:
     print(line, flush=True)
 
 
+def show_wait(provider: str, seconds: float) -> None:
+    print(f"  {provider} says too many requests: waiting {seconds:.0f} s (Ctrl+C stops and keeps what finished)",
+          flush=True)
+
+
 def _pct(value) -> str:
     return "—" if value is None else f"{value:.0%}"
 
@@ -108,7 +113,7 @@ def main() -> int:
         return 0
     try:
         record = live.run(os.environ, providers=wanted, cases=cases, limit=limit, pause=max(0.0, args.pause),
-                          judge=not args.no_judge, groups=groups, on_item=show_item)
+                          judge=not args.no_judge, groups=groups, on_item=show_item, on_wait=show_wait)
     except KeyboardInterrupt:
         print("\nStopped. What had finished is saved.")
         return 130
