@@ -13,6 +13,7 @@ from app.integrations.wikipedia import ATTRIBUTION as WIKIPEDIA
 from app.integrations.wikivoyage import ATTRIBUTION as WIKI
 from app.services.account_service import AccountError, Accounts
 from app.services.group_service import clean_group
+from app.services.plan_photos import plan_photos
 from app.services.trip_toolkit import handlers as toolkit
 from app.tools.booking_tools import cancellation_terms
 from app.tools.client import call_with_retry
@@ -198,6 +199,19 @@ class PlannerService:
             return explore_place(" ".join(place.split()), self.planner.deps)
         except ToolError as e:
             raise ApiError(502 if e.retryable else 422, str(e))
+
+    def photos(self, body: dict | None, token: str | None = None, client: str = "") -> dict:
+        """POST /api/v1/photos {"thread_id": ...}: which article shows each sight of a saved plan. Only reads."""
+        user = self._user(token)
+        self._limit("read", user, client)
+        thread_id = body.get("thread_id") if isinstance(body, dict) else None
+        if not isinstance(thread_id, str) or not 0 < len(thread_id) <= 64:
+            raise ApiError(422, "'thread_id' is required")
+        self._may_see(thread_id, user)
+        state = self.planner.get(thread_id)
+        if state is None:
+            raise ApiError(404, f"unknown thread '{thread_id}'")
+        return plan_photos(state, self.planner.deps)
 
     # ------------------------------------------------------------ cancellation
     def cancel_booking(self, thread_id: str, body: dict, token: str | None = None, client: str = "") -> dict:

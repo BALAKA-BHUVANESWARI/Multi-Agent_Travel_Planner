@@ -41,6 +41,14 @@ def _titles(name: str, extras: list[str]) -> list[str]:
     return out
 
 
+def _shorter(name: str) -> list[str]:
+    """Plan names can say more than the article title: "Fort Aguada and lighthouse" -> "Fort Aguada". Only used
+    for sights with a known position, where an article must be on that very spot to be accepted."""
+    cut = re.split(r"\s+(?:and|with|&)\s+|\s+\(", name)[0].strip()
+    cut = re.sub(r"\s+(?:walk|walking tour|tour|visit)$", "", cut, flags=re.I)
+    return [cut] if cut != name and len(cut.split()) >= 2 else []
+
+
 def find_place_photos(place: dict, sights: list | None = None) -> dict:
     """``place`` is {name, lat, lon, region?, country?}; each sight is {id, name, lat?, lon?}.
     Returns {"place": title or None, "sights": {id: title}, "checked": bool, "attribution": []}."""
@@ -56,8 +64,9 @@ def find_place_photos(place: dict, sights: list | None = None) -> dict:
         if not isinstance(s, dict) or not _clean(s.get("name")) or not s.get("id"):
             continue
         spot = _position(s)
-        wanted[str(s["id"])] = (_titles(_clean(s["name"]), [name]), spot or centre,
-                                SAME_SPOT_KM if spot else NEAR_TOWN_KM)
+        label = _clean(s["name"])
+        titles = _titles(label, [name]) + (_shorter(label) if spot else [])
+        wanted[str(s["id"])] = (titles, spot or centre, SAME_SPOT_KM if spot else NEAR_TOWN_KM)
     # plain names first, so they are never the ones cut off if there are more titles than one query takes
     every = [t[0] for t, _, _ in wanted.values()] + [x for t, _, _ in wanted.values() for x in t[1:]]
     info = {}

@@ -1,5 +1,7 @@
 // A finished plan, top to bottom.
+import { usePlanPhotos } from "../../hooks/usePlanPhotos.js";
 import { MODE_NAME } from "../../services/constants.js";
+import { placeName } from "../../services/format.js";
 import Banner from "../common/Banner.jsx";
 import Toolkit from "../toolkit/Toolkit.jsx";
 import AgentLog from "./AgentLog.jsx";
@@ -23,6 +25,8 @@ export default function PlanView({ result, onDecide, onRun, onResult, onPickPlac
   const activities = result.activities || {};
   const alternatives = result.alternatives?.items || [];
   const waiting = result.status === "awaiting_approval";
+  const photos = usePlanPhotos(result);
+  const destination = placeName(result.constraints, "destination");
   return (
     <>
       <TripSummary result={result} />
@@ -32,7 +36,9 @@ export default function PlanView({ result, onDecide, onRun, onResult, onPickPlac
       <GroupFit report={result.group_report} />
       <TravelAndHotel transport={result.flight} hotel={result.hotel} travelWord={travelWord} />
       <div className="muted" style={{ margin: "14px 0 -6px" }}>Weather: {result.weather?.source || "unavailable"}</div>
-      {result.itinerary.days.map((day) => <DayCard key={day.day} day={day} travelMode={travelMode} />)}
+      {result.itinerary.days.map((day) => (
+        <DayCard key={day.day} day={day} travelMode={travelMode} destination={destination} photos={photos} />
+      ))}
       <MapCard itinerary={result.itinerary} centre={result.constraints.destination_geo} />
       <TopSights activities={activities} itinerary={result.itinerary} />
       <WhereToEat dining={activities.dining} />

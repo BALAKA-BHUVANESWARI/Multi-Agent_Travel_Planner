@@ -5,7 +5,7 @@ const known = new Map();
 // very large pictures are served already scaled down, from the "thumb" host
 const PICTURE_HOSTS = ["upload.wikimedia.org", "thumb.wikimedia.org"];
 
-const isPicture = (source) => {
+export const isPicture = (source) => {
   try {
     const url = new URL(source);
     return url.protocol === "https:" && PICTURE_HOSTS.includes(url.hostname) && !/\.svg(\/|$)/i.test(url.pathname);
@@ -22,7 +22,7 @@ function sized(data, width) {
   return thumb ? thumb.replace(/\/\d+px-/, `/${width}px-`) : full?.source;
 }
 
-function filePage(source) {
+export function filePage(source) {
   const url = new URL(source);
   const host = url.pathname.startsWith("/wikipedia/commons/") ? "commons.wikimedia.org" : "en.wikipedia.org";
   // a scaled copy's address is .../thumb/a/ab/<file name>/<width>px-<file name>

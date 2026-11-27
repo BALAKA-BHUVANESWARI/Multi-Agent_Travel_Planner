@@ -73,6 +73,8 @@ def make_handler(service: PlannerService):
                 return 200, service.cancel_booking(m.group(1), self._json_body(), token, client), "application/json"
             if method == "POST" and path == "/explore":
                 return 200, service.explore(self._json_body(), token, client), "application/json"
+            if method == "POST" and path == "/photos":
+                return 200, service.photos(self._json_body(), token, client), "application/json"
             if method == "POST" and path == "/emergency":
                 return 200, service.emergency(self._json_body(), token, client), "application/json"
             m = re.fullmatch(r"/trip/([\w-]{1,64})/([a-z]{1,20})(?:/([\w-]{1,40}))?", path)

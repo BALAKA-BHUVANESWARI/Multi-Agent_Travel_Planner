@@ -141,6 +141,19 @@ Endpoints: `POST /api/v1/emergency` (`{"place": "Bangkok", "nearby": true}`, `{"
 
 Endpoint: `POST /api/v1/explore` with `{"place": "Prague"}`. MCP tool added: `find_place_photos`.
 
+## Photos in the day-by-day plan
+
+* Each named sight shows up to four thumbnails. **View all photos** opens a gallery with up to 24, with captions,
+  arrow keys, and a link to each photo's author and licence. Flexible suggestions (for example "Dinner at a local
+  restaurant") are not one place, so they get no photos.
+* Photos come from the sight's Wikipedia article, and only when the article's location matches the sight. Maps,
+  plans, logos and non-JPEG files are left out; old views and pictures of fires or repairs are listed last. This
+  filter works on file names and captions, so a few drawings or paintings can still appear.
+* How many photos there are depends on the article. Every sight also has **More images on Google** and **Google
+  Maps** links, which work when no photo could be confirmed. Those open Google with the place name.
+* The server only confirms which article to use (`POST /api/v1/photos` with `{"thread_id": "..."}`; it reads the saved
+  plan and changes nothing). The photos are loaded by the visitor's browser.
+
 ## Control flow in numbers
 
 * Automatic re-plans (budget or critic): at most **2**, then the plan is shown with a visible warning.
