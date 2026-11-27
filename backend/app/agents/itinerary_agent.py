@@ -63,22 +63,29 @@ def _allowed_amounts(state: dict) -> set[int]:
     return vals
 
 
+_WRITER_SYSTEM = ("Write a friendly 80-120 word overview of this trip plan. Use ONLY the facts given. Do not "
+                  "invent places, prices or times. If you mention money, use the exact rupee figures provided "
+                  "with the symbol ₹. Return {\"overview\": \"...\"}.")
+
+
+def ask_overview(state: dict, llm) -> tuple[dict | None, dict]:
+    """(the model's answer or None, the facts it was given)."""
+    import json
+    facts = {"destination": place_name(state["constraints"], "destination"),
+             "days": [{"day": d["day"], "date": d["date"],
+                       "highlights": [x["name"] for x in d["items"] if x["type"] == "activity"],
+                       "rainy": d["rainy"]} for d in state["itinerary"]["days"]],
+             "total_inr": state["budget_report"]["total"], "budget_inr": state["budget_report"]["budget"],
+             "over_budget": state["budget_report"]["over_budget"],
+             "warnings": list(dict.fromkeys(state.get("warnings", [])))}
+    return llm.complete_json("writer", _WRITER_SYSTEM, json.dumps(facts), _WRITER_SCHEMA), facts
+
+
 def writer_node(state: dict, deps) -> dict:
     template = render_summary(state)
     overview, used = "", False
     if deps.llm and deps.llm.available("writer"):
-        import json
-        facts = {"destination": place_name(state["constraints"], "destination"),
-                 "days": [{"day": d["day"], "date": d["date"],
-                           "highlights": [x["name"] for x in d["items"] if x["type"] == "activity"],
-                           "rainy": d["rainy"]} for d in state["itinerary"]["days"]],
-                 "total_inr": state["budget_report"]["total"], "budget_inr": state["budget_report"]["budget"],
-                 "over_budget": state["budget_report"]["over_budget"],
-                 "warnings": list(dict.fromkeys(state.get("warnings", [])))}
-        system = ("Write a friendly 80-120 word overview of this trip plan. Use ONLY the facts given. Do not "
-                  "invent places, prices or times. If you mention money, use the exact rupee figures provided "
-                  "with the symbol ₹. Return {\"overview\": \"...\"}.")
-        obj = deps.llm.complete_json("writer", system, json.dumps(facts), _WRITER_SCHEMA)
+        obj, facts = ask_overview(state, deps.llm)
         grounded = bool(obj) and numbers_are_grounded(obj["overview"], _allowed_amounts(state))
         if obj:
             observe.event("guardrail", "writer_amounts", "ok" if grounded else "rejected")

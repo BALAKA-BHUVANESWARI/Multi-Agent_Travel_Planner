@@ -1,0 +1,12 @@
+[
+ {"id": "01", "say": "Plan a three day trip to Goa from Delhi with a budget of 30000 rupees", "expect": {"origin": "delhi", "destination": "goa", "days": 3, "budget": 30000}},
+ {"id": "02", "say": "Four days in Kochi from Bengaluru, budget 45000, for 2 people", "expect": {"origin": "bengaluru", "destination": "kochi", "days": 4, "budget": 45000, "travelers": 2}},
+ {"id": "03", "say": "I want to go to Manali from Chandigarh for 5 days with 60000 rupees", "expect": {"origin": "chandigarh", "destination": "manali", "days": 5, "budget": 60000}},
+ {"id": "04", "say": "Jaipur from Mumbai for 3 days starting 28 December, budget 50000", "expect": {"origin": "mumbai", "destination": "jaipur", "days": 3, "budget": 50000, "start_date": "2026-12-28"}},
+ {"id": "05", "say": "Plan 6 days in Udaipur from Hyderabad for 4 people, budget 120000", "expect": {"origin": "hyderabad", "destination": "udaipur", "days": 6, "budget": 120000, "travelers": 4}},
+ {"id": "06", "say": "A trip to Rishikesh from Delhi for 2 days under 15000 rupees", "expect": {"origin": "delhi", "destination": "rishikesh", "days": 2, "budget": 15000}},
+ {"id": "07", "say": "Take me from Chennai to Ooty for 4 days in January, budget 35000", "expect": {"origin": "chennai", "destination": "ooty", "days": 4, "budget": 35000, "start_date": "2027-01-10"}},
+ {"id": "08", "say": "Hampi from Pune for 3 days with a budget of 25000", "expect": {"origin": "pune", "destination": "hampi", "days": 3, "budget": 25000}},
+ {"id": "09", "say": "Seven days in Goa from Kolkata starting 5 February, budget 90000 for 2 people", "expect": {"origin": "kolkata", "destination": "goa", "days": 7, "budget": 90000, "travelers": 2, "start_date": "2027-02-05"}},
+ {"id": "10", "say": "Plan Varanasi from Lucknow for 2 days, budget 12000, by train", "expect": {"origin": "lucknow", "destination": "varanasi", "days": 2, "budget": 12000, "travel_mode": "train"}}
+]

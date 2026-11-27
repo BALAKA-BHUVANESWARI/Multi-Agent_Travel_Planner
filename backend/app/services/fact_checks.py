@@ -280,6 +280,21 @@ def _record(job: str, flags: list, looked: dict, shown: bool, text: str | None =
             step.detail("ai_text", text[:2000])
 
 
+def check_text(text: str, plan, *, start_date, days, question: str = "", amounts: set | None = None) -> tuple[list, dict]:
+    """Every check on one AI text against ``plan`` (any nested data). Returns (flags, kind -> how many looked at)."""
+    leaves = _leaves(plan)
+    found, looked = [], {}
+    for kind, (flags, count) in {
+        "amounts": check_amounts(text, numbers_in(leaves) if amounts is None else amounts),
+        "dates": check_dates(text, leaves, start_date, days),
+        "day_counts": check_day_counts(text, leaves, days),
+        "places": check_places(text, leaves, question),
+    }.items():
+        found += flags
+        looked[kind] = count
+    return found, looked
+
+
 def record_text(job: str, text: str, plan: Callable[[], list], *, start_date, days, shown: bool, question: str = "",
                 amounts: Callable[[], set] | None = None, amounts_rejected: bool = False) -> None:
     """An AI summary or chat answer against the plan. ``plan()`` returns any nested data the plan is made of;
@@ -288,16 +303,8 @@ def record_text(job: str, text: str, plan: Callable[[], list], *, start_date, da
     if not observe.active():
         return
     try:
-        leaves = _leaves(plan())
-        found, looked = [], {}
-        for kind, (flags, count) in {
-            "amounts": check_amounts(text, numbers_in(leaves) if amounts is None else amounts()),
-            "dates": check_dates(text, leaves, start_date, days),
-            "day_counts": check_day_counts(text, leaves, days),
-            "places": check_places(text, leaves, question),
-        }.items():
-            found += flags
-            looked[kind] = count
+        found, looked = check_text(text, plan(), start_date=start_date, days=days, question=question,
+                                   amounts=None if amounts is None else amounts())
         if amounts_rejected and not any(f["kind"] == "amounts" for f in found):
             found.append({"kind": "amounts", "value": "an amount not written as ₹ with a figure from the plan",
                           "sentence": ""})

@@ -36,7 +36,7 @@ Built on **LangGraph** and **MCP**. It runs on free tiers and free data sources,
 | Plan for a group | Everyone's likes and dislikes, with a fairness report |
 | Trip toolkit | Packing list and local customs, emergency numbers and nearby help, document reminders, emissions, expense tracking |
 | Live prices (optional) | Google Flights and Google Hotels prices through a free Tavily key |
-| Metrics dashboard (optional) | A password-protected page at `/dashboard` for whoever runs the app: timings, agents, AI calls, request timelines, data lookups, logs, safety rules and made-up fact checks, kept on your computer |
+| Metrics dashboard (optional) | A password-protected page at `/dashboard` for whoever runs the app: timings, agents, AI calls, request timelines, data lookups, logs, safety rules, made-up fact checks and test results, kept on your computer |
 
 Details of each feature are in [docs/features.md](docs/features.md).
 
@@ -82,6 +82,7 @@ change requests, so a run can never loop forever. See [docs/architecture.md](doc
 │   │   ├── agents/          # one file per agent
 │   │   ├── graph/           # shared state, routing rules, LangGraph workflow
 │   │   ├── tools/           # everything an agent can call, also served over MCP
+│   │   ├── evaluation/      # offline, live AI and voice tests and their saved results
 │   │   ├── services/        # business logic: budget, itinerary, pricing, trip toolkit
 │   │   ├── integrations/    # one client per outside data source
 │   │   ├── rag/             # small local search over travel-guide text
@@ -90,7 +91,7 @@ change requests, so a run can never loop forever. See [docs/architecture.md](doc
 │   │   ├── database/        # SQLite connection, tables, queries
 │   │   ├── core/            # configuration, security, rate limits, caching, tracing
 │   │   └── tests/           # grouped by layer
-│   ├── evals/               # evaluation prompts, runner and latest report
+│   ├── evals/               # test cases, offline, live and voice test runners, latest report
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
@@ -164,8 +165,13 @@ All routes start with `/api/v1`. FastAPI serves interactive documentation at `/d
 ```bash
 cd backend
 python -m pytest              # offline and repeatable: tests never call outside services or use your keys
-python evals/run_evals.py     # compares the agent graph with a single-agent baseline
+python evals/run_evals.py     # compares the agent graph with a single-agent baseline; checks dates, phrasings and chat
+python evals/run_live_evals.py --list     # optional live AI tests with your keys (at most 100 calls a run)
+python evals/run_voice_test.py --list     # optional voice test
 ```
+
+The metrics dashboard's Evaluations tab shows the saved results ([details](docs/features.md#evaluations)). The
+offline cases also list **known gaps** in how requests are read, such as dates written only with numbers.
 
 On the 23 evaluation prompts (offline tools, fixed date) the multi-agent graph gets the expected outcome for **100%**,
 against **61%** for a single agent with the same tools. Most of the gap comes from budget re-planning. The full

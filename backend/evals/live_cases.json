@@ -1,0 +1,37 @@
+{
+ "reading": [
+  {"id": "read-fortnight", "text": "a fortnight in Goa from Delhi with a budget of two lakh", "expect": {"origin": "delhi", "destination": "goa", "days": 14, "budget": 200000}},
+  {"id": "read-dilli", "text": "Goa from Dilli for 5 days, fifty thousand rupees total", "expect": {"origin": "delhi", "destination": "goa", "days": 5, "budget": 50000}},
+  {"id": "read-nights", "text": "me and the missus, five nights in Udaipur from Pune, 80k", "expect": {"origin": "pune", "destination": "udaipur", "days": 6, "budget": 80000, "travelers": 2}},
+  {"id": "read-4d3n", "text": "from Bombay to Kochi, 4D/3N, Rs.45,000 for two adults", "expect": {"origin": "mumbai", "destination": "kochi", "days": 4, "budget": 45000, "travelers": 2}},
+  {"id": "read-hindi-words", "text": "Delhi se Jaipur 3 din, budget 30 hazar", "expect": {"origin": "delhi", "destination": "jaipur", "days": 3, "budget": 30000}},
+  {"id": "read-words-budget", "text": "Plan Ooty from Coimbatore, 2 nights, under twenty five thousand", "expect": {"origin": "coimbatore", "destination": "ooty", "days": 3, "budget": 25000}},
+  {"id": "read-per-head", "text": "we are 6 people going to Rishikesh from Delhi for 3 days, 12000 per head", "expect": {"origin": "delhi", "destination": "rishikesh", "days": 3, "budget": 72000, "travelers": 6}},
+  {"id": "trap-no-budget", "text": "Goa from Delhi for 4 days", "expect": {"origin": "delhi", "destination": "goa", "days": 4, "budget": null}},
+  {"id": "trap-no-origin", "text": "3 days in Goa under 30000", "expect": {"origin": null, "destination": "goa", "days": 3, "budget": 30000}},
+  {"id": "trap-no-destination", "text": "I am in Chennai with 40000, suggest somewhere nice", "expect": {"origin": "chennai", "destination": null, "days": null, "budget": 40000}}
+ ],
+ "ranking": [
+  {"id": "rank-goa", "text": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight, we love food and history"},
+  {"id": "rank-jaipur", "text": "Plan a 3 day trip to Jaipur from Delhi in February, budget 40000 for 2 by train, we love shopping and history"},
+  {"id": "rank-manali", "text": "Plan a 5 day trip to Manali from Delhi in May, budget 80000 for 2 by bus, we love adventure and nature"},
+  {"id": "rank-kochi", "text": "Plan a 4 day trip to Kochi from Bengaluru in January, budget 60000 for 2 by flight, we love culture and food"},
+  {"id": "rank-udaipur", "text": "Plan a 3 day trip to Udaipur from Mumbai in November 2027, budget 55000 for 2 by flight, we love nature and culture"}
+ ],
+ "summary": [
+  {"id": "sum-goa", "text": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight"},
+  {"id": "sum-jaipur", "text": "Plan a 3 day trip to Jaipur from Delhi in February, budget 40000 for 2 by train"},
+  {"id": "sum-manali-rain", "text": "Plan a 5 day trip to Manali from Delhi in July, budget 80000 for 2 by bus"},
+  {"id": "sum-tight", "text": "Plan a 5 day trip to Goa from Delhi in December, budget 18000 for 3 by flight"}
+ ],
+ "chat": [
+  {"id": "ask-parents", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "is this a good plan for older parents?"},
+  {"id": "ask-beach-day", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "which day should I pack beach clothes for?"},
+  {"id": "ask-child", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "which of these places would suit a small child?"},
+  {"id": "ask-order", "plan": "Plan a 3 day trip to Jaipur from Delhi in February, budget 40000 for 2 by train", "text": "which forts or palaces am I seeing, and on which days?"},
+  {"id": "ask-opening", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "what time does Fort Aguada open?", "not_in_plan": true},
+  {"id": "ask-water", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "is the tap water safe to drink there?", "not_in_plan": true},
+  {"id": "ask-dress", "plan": "Plan a 4 day trip to Goa from Delhi in December, budget 90000 for 2 by flight", "text": "can I wear shorts at the church?", "not_in_plan": true},
+  {"id": "ask-wheelchair", "plan": "Plan a 3 day trip to Jaipur from Delhi in February, budget 40000 for 2 by train", "text": "can a wheelchair get into Amber Fort?", "not_in_plan": true}
+ ]
+}

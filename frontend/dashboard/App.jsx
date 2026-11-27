@@ -3,6 +3,7 @@ import { download, getJson, postJson, session, useData } from "./api.js";
 import { KINDS, STATUSES, count, words } from "./format.js";
 import Agents from "./tabs/Agents.jsx";
 import AiModels from "./tabs/AiModels.jsx";
+import Evaluations from "./tabs/Evaluations.jsx";
 import Guardrails from "./tabs/Guardrails.jsx";
 import Hallucinations from "./tabs/Hallucinations.jsx";
 import Logs from "./tabs/Logs.jsx";
@@ -20,8 +21,9 @@ const TABS = [
   ["logs", "Logs", "logs"],
   ["guardrails", "Guardrails", "safety_events"],
   ["hallucinations", "Hallucination checks", "fact_checks"],
+  ["evaluations", "Evaluations", "eval_results"],
 ];
-const DOWNLOADS = { requests: "requests", agents: "agent figures", ai_calls: "AI calls", lookups: "data lookups", logs: "log entries", safety_events: "safety events", fact_checks: "fact checks" };
+const DOWNLOADS = { requests: "requests", agents: "agent figures", ai_calls: "AI calls", lookups: "data lookups", logs: "log entries", safety_events: "safety events", fact_checks: "fact checks", eval_results: "test results" };
 const NO_FILTERS = { period: "all", date_from: "", date_to: "", kind: "", status: "", agent: "", model: "", run: "" };
 const AUTO_SECONDS = 15;
 
@@ -106,15 +108,18 @@ function Filters({ filters, options, onChange }) {
 function View({ route, filters, tick, logSearch, setLogSearch, onChanged }) {
   const [logLimit, setLogLimit] = useState(200);
   const [show, setShow] = useState("");
+  const [liveRun, setLiveRun] = useState("");
   const typed = useDelayed(logSearch);
   const params = filters.period === "dates" ? { ...filters, period: "all" } : filters;
   const detail = route.tab === "traces" && route.id;
-  const path = detail ? `runs/${route.id}` : route.tab === "traces" ? "runs" : route.tab === "hallucinations" ? "factchecks" : route.tab;
+  const path = detail ? `runs/${route.id}` : route.tab === "traces" ? "runs" : route.tab === "hallucinations" ? "factchecks" : route.tab === "evaluations" ? "evals" : route.tab;
   const extra = route.tab === "logs" ? { ...typed, limit: logLimit } : route.tab === "hallucinations" ? { show } : {};
-  const { data, error, loading } = useData(path, detail ? {} : { ...params, ...extra }, tick);
+  // saved test results: the filters pick recorded requests, so they are not sent
+  const query = detail ? {} : route.tab === "evaluations" ? { live: liveRun } : { ...params, ...extra };
+  const { data, error, loading } = useData(path, query, tick);
   const problem = error && <p className="problem" role="alert">{error}</p>;
   if (!data) return problem || <p className="empty" role="status">Loading…</p>;
-  const narrowed = !detail && filters.agent && <p className="note">With an agent chosen: requests where it ran, and only its own steps and the calls made inside them.</p>;
+  const narrowed = !detail && route.tab !== "evaluations" && filters.agent && <p className="note">With an agent chosen: requests where it ran, and only its own steps and the calls made inside them.</p>;
   let body;
   if (detail) body = <TraceDetail key={route.id} data={data} />;
   else if (route.tab === "overview") body = <Overview data={data} />;
@@ -124,6 +129,7 @@ function View({ route, filters, tick, logSearch, setLogSearch, onChanged }) {
   else if (route.tab === "retrieval") body = <Retrieval data={data} />;
   else if (route.tab === "guardrails") body = <Guardrails data={data} />;
   else if (route.tab === "hallucinations") body = <Hallucinations data={data} show={show} onShow={setShow} onChanged={onChanged} />;
+  else if (route.tab === "evaluations") body = <Evaluations data={data} onPick={setLiveRun} onChanged={onChanged} />;
   else body = <Logs data={data} search={logSearch} onSearch={setLogSearch} onMore={() => setLogLimit(logLimit + 400)} />;
   return (
     <div className={loading ? "stale" : undefined} aria-busy={loading}>
@@ -165,6 +171,7 @@ function Dashboard({ onSignOut }) {
   };
   const record = options.data?.recording;
   const detail = route.tab === "traces" && route.id;
+  const tests = route.tab === "evaluations";                // not recorded requests: no filters, no recording note
 
   return (
     <div className="board">
@@ -203,7 +210,7 @@ function Dashboard({ onSignOut }) {
           </div>
         </header>
         {saveProblem && <p className="problem" role="alert">{saveProblem}</p>}
-        {record && (
+        {record && !tests && (
           <p className="banner">
             {record.mode === "off"
               ? "Recording is switched off (OBSERVABILITY=0). You are seeing what was recorded earlier."
@@ -214,7 +221,7 @@ function Dashboard({ onSignOut }) {
             {options.data.recorded === 0 && " Nothing is recorded yet: make a plan in the planner, then press Refresh."}
           </p>
         )}
-        {!detail && options.data && <Filters filters={filters} options={options.data} onChange={setFilters} />}
+        {!detail && !tests && options.data && <Filters filters={filters} options={options.data} onChange={setFilters} />}
         <View key={route.tab} route={route} filters={filters} tick={tick} logSearch={logSearch} setLogSearch={setLogSearch} onChanged={refresh} />
       </main>
     </div>

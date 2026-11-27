@@ -1,5 +1,6 @@
 """The evaluation dashboard's requests: sign-in, the numbers for each tab, and downloads. It only reads, except for
-the owner's "real problem" / "false alarm" mark on a flagged fact check.
+the owner's hand checks: "real problem" / "false alarm" on a flagged fact check, and "good" / "wrong" on a live
+test answer. It never runs a test.
 
 The dashboard is off until .env has DASHBOARD=1 and a DASHBOARD_PASSWORD of at least 8 characters. Signing in gives
 a temporary token that is kept in memory (a restart signs everyone out) and sent with each request. Dashboard
@@ -16,13 +17,15 @@ import time
 from datetime import datetime
 
 from app.core.rate_limit import RateLimited, RateLimiter
+from app.evaluation import results as eval_results
+from app.evaluation import view as eval_view
 from app.observability import analytics, reports, safety, settings
 from app.observability.store import RecordStore
 from app.services.trip_service import ApiError, PlannerService
 
 SESSION_SECONDS = 12 * 3600
 MAX_SESSIONS = 20
-EXPORTS = ("requests", "agents", "ai_calls", "lookups", "logs", "safety_events", "fact_checks")
+EXPORTS = ("requests", "agents", "ai_calls", "lookups", "logs", "safety_events", "fact_checks", "eval_results")
 _SPAN_ID = re.compile(r"[0-9a-f]{8,32}")
 MAX_EXPORT_ROWS = 20_000
 LOG_LEVELS = ("", "error", "warning", "info")
@@ -139,6 +142,8 @@ class DashboardService:
         store = self._store()
         if view == "options":
             return {**analytics.options(store), "recording": self._recording(), "engine": self.service.engine}
+        if view == "evals":                                    # saved test results, not recorded requests
+            return eval_view.evaluations(query)
         if view.startswith("runs/"):
             found = analytics.trace(store, view[len("runs/"):])
             if found is None:
@@ -178,6 +183,8 @@ class DashboardService:
         self._signed_in(token)
         if not isinstance(body, dict):
             raise ApiError(422, "body must be a JSON object")
+        if "eval_run" in body:
+            return self._mark_answer(body)
         span_id, verdict = body.get("id"), body.get("verdict")
         if not isinstance(span_id, str) or not _SPAN_ID.fullmatch(span_id) \
                 or verdict not in ("", *safety.VERDICTS):
@@ -186,6 +193,15 @@ class DashboardService:
         if store is None or not store.set_mark(span_id, verdict):
             raise ApiError(404, "That check is not in the records (it may have expired).")
         return {"ok": True, "id": span_id, "verdict": verdict}
+
+    @staticmethod
+    def _mark_answer(body: dict) -> dict:
+        run_id, item, verdict = body.get("eval_run"), body.get("item"), body.get("verdict")
+        if not isinstance(run_id, str) or not isinstance(item, str) or verdict not in ("", *eval_results.VERDICTS):
+            raise ApiError(422, f"send 'eval_run', 'item' and 'verdict' ({', '.join(eval_results.VERDICTS)}, or empty)")
+        if not eval_results.set_mark(run_id, item, verdict):
+            raise ApiError(404, "That test answer is not saved any more.")
+        return {"ok": True, "item": item, "verdict": verdict}
 
     def export(self, query: dict, token: str | None = None) -> tuple[bytes, str, str]:
         """(file, content type, file name) for the records that match the filters."""
@@ -197,6 +213,12 @@ class DashboardService:
             filters = analytics.parse_filters(query)
         except ValueError as e:
             raise ApiError(422, str(e))
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        kind = "text/csv" if form == "csv" else "application/json"
+        if what == "eval_results":
+            rows = eval_view.export_rows()[:MAX_EXPORT_ROWS]
+            return (reports.as_csv(rows) if form == "csv" else reports.as_json(rows)), kind, \
+                f"metrics-{what}-{stamp}.{form}"
         store = self._store()
         data = analytics.Data.load(store, filters)
         if what == "requests":
@@ -217,5 +239,4 @@ class DashboardService:
                                   str(query.get("type") or "")[:40], MAX_EXPORT_ROWS, clip=0)["entries"]
         rows = rows[:MAX_EXPORT_ROWS]
         body = reports.as_csv(rows) if form == "csv" else reports.as_json(rows)
-        stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        return body, "text/csv" if form == "csv" else "application/json", f"metrics-{what}-{stamp}.{form}"
+        return body, kind, f"metrics-{what}-{stamp}.{form}"

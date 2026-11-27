@@ -3,6 +3,10 @@
     python evals/run_evals.py                 # from the backend folder: offline, deterministic; writes evals/report.md
     python evals/run_evals.py --judge         # also LLM-as-judge for preference match (needs API keys)
 
+Also run: reading_cases.json (exact dates and phrasings) and chat_cases.json (answers, fixed replies, and that the
+chat never books). Every run is saved for the dashboard's Evaluations tab (--no-history skips that).
+Live AI tests are separate: evals/run_live_evals.py.
+
 Deterministic metrics (per planned trip):
   outcome      guardrail/intake/plan outcome matches the expectation
   constraints  fraction of expected constraints parsed correctly
@@ -36,6 +40,7 @@ from app.agents.intake_agent import intake_node  # noqa: E402
 from app.agents.itinerary_agent import merge_node  # noqa: E402
 from app.core import config  # noqa: E402
 from app.database.repositories import Store  # noqa: E402
+from app.evaluation import offline, results  # noqa: E402
 from app.graph.deps import Deps  # noqa: E402
 from app.graph.runner import Planner  # noqa: E402
 from app.graph.state import apply_update, initial_state  # noqa: E402
@@ -174,7 +179,57 @@ def judge(rows: list[dict], cases: dict) -> dict | None:
 
 
 # ------------------------------------------------------------------ report
-def build_report(g_rows, b_rows, judged) -> str:
+def run_extra() -> dict:
+    """The request-reading and chat cases (no internet, no AI)."""
+    here = Path(__file__).parent
+    return {"reading": [offline.reading_result(c, TODAY) for c in offline.load_cases(here / "reading_cases.json")],
+            "chat": [offline.chat_result(c, lambda: make_planner()[0])
+                     for c in offline.load_cases(here / "chat_cases.json")]}
+
+
+def extra_section(extra: dict) -> list[str]:
+    L = ["## Request reading and chat cases", "", "| Group | Passed | Known gaps (not counted) |", "|---|---|---|"]
+    for name, title in (("reading", "Exact dates and phrasings"), ("chat", "Chat replies, including never books")):
+        passed, total = offline.counted(extra[name])
+        L.append(f"| {title} | {passed} of {total} | {sum(bool(c['known_gap']) for c in extra[name])} |")
+    gaps = [c for rows in extra.values() for c in rows if c["known_gap"]]
+    if gaps:
+        L += ["", "Known gaps (things the planner is known to get wrong):", ""]
+        L += [f"- `{c['text']}`: " + ("now passes; remove its known_gap mark" if c["passed"] else c["known_gap"])
+              for c in gaps]
+    failed = [c for rows in extra.values() for c in rows if not c["passed"] and not c["known_gap"]]
+    if failed:
+        L += ["", "Failed:", ""] + [f"- {c['id']}: {'; '.join(c['failed'])}" for c in failed]
+    return L + [""]
+
+
+def history_record(g_rows, b_rows, extra: dict, judged) -> dict:
+    """What the dashboard shows for one run: shares per measure and one line per case. No plan text."""
+    def shares(rows):
+        agg = aggregate(rows)
+        return {m: {"share": agg[m][0], "cases": agg[m][1]} for m in METRICS}
+
+    baseline = {r["id"]: r for r in b_rows}
+    texts = {c["id"]: c for c in CASES}
+
+    def failed(row):
+        return [m for m, v in row["scores"].items() if float(v) < 0.999]
+
+    cases = [{"id": r["id"], "group": "planning", "text": texts[r["id"]]["text"], "passed": not failed(r),
+              "failed": failed(r), "known_gap": "", "expected": texts[r["id"]]["outcome"], "outcome": r["outcome"],
+              "baseline_outcome": baseline[r["id"]]["outcome"], "baseline_passed": not failed(baseline[r["id"]]),
+              "baseline_failed": failed(baseline[r["id"]])} for r in g_rows]
+    cases += extra["reading"] + extra["chat"]
+    groups = {}
+    for name in ("planning", "reading", "chat"):
+        passed, total = offline.counted([c for c in cases if c["group"] == name])
+        groups[name] = {"passed": passed, "total": total}
+    return {"fixed_date": str(TODAY), "metrics": {"planner": shares(g_rows), "baseline": shares(b_rows)},
+            "groups": groups, "cases": cases,
+            "judge_mean": statistics.mean(v["score"] for v in judged.values()) if judged else None}
+
+
+def build_report(g_rows, b_rows, judged, extra: dict | None = None) -> str:
     ga, ba = aggregate(g_rows), aggregate(b_rows)
     L = ["# Evaluation report", "",
          f"{len(g_rows)} prompts, offline deterministic tools, fixed date {TODAY}. "
@@ -199,6 +254,8 @@ def build_report(g_rows, b_rows, judged) -> str:
         bok = "OK" if b["scores"]["outcome"] else "MISS"
         L.append(f"| {r['id']} | {exp} | {r['outcome']} ({ok}) | {r['strategy'] or '-'} / {r['retries']} | {tb} | "
                  f"{b['outcome']} ({bok}) |")
+    if extra:
+        L += [""] + extra_section(extra)[:-1]
     L += ["", "## Reading the numbers", "",
           "- **budget / outcome**: the baseline never retries cheaper options and never warns, so tight and "
           "impossible budgets end over budget with no warning.",
@@ -230,19 +287,36 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--judge", action="store_true")
     ap.add_argument("--out", default=str(Path(__file__).parent / "report.md"))
+    ap.add_argument("--no-history", action="store_true", help="do not save this run for the dashboard")
     args = ap.parse_args()
     g_rows, b_rows = run_suite(CASES, "graph"), run_suite(CASES, "baseline")
     judged = judge(g_rows, {c["id"]: c for c in CASES}) if args.judge else None
-    report = build_report(g_rows, b_rows, judged if args.judge else None)
+    extra = run_extra()
+    report = build_report(g_rows, b_rows, judged if args.judge else None, extra)
     Path(args.out).write_text(report, encoding="utf-8")
     ga, ba = aggregate(g_rows), aggregate(b_rows)
     print(f"{'metric':<12}{'graph':>8}{'baseline':>10}")
     for m in METRICS:
         print(f"{m:<12}{pct(ga[m][0]):>8}{pct(ba[m][0]):>10}")
+    record = history_record(g_rows, b_rows, extra, judged)
+    broken = []
+    for name, title in (("reading", "request reading"), ("chat", "chat")):
+        passed, total = offline.counted(extra[name])
+        gaps = [c for c in extra[name] if c["known_gap"]]
+        print(f"{title + ' cases':<24}{passed} of {total} passed" + (f"; {len(gaps)} known gaps" if gaps else ""))
+        broken += [c for c in extra[name] if not c["passed"] and not c["known_gap"]]
+        for c in gaps:
+            if c["passed"]:
+                print(f"  known gap now passes: {c['id']}")
+    for c in broken:
+        print(f"  FAILED {c['id']}: {'; '.join(c['failed'])}")
     print(f"report written to {args.out}")
-    # exit non-zero if the multi-agent graph regresses on the guarantees it exists to provide
-    return 0 if all((ga[m][0] or 0) >= 0.999 for m in ("outcome", "budget", "dates", "overlaps", "rain",
-                                                         "prices", "schema")) else 1
+    if not args.no_history:
+        results.save("offline", record)
+        print(f"run saved for the dashboard in {results.folder() / 'offline'}")
+    # exit non-zero if the multi-agent graph regresses on the guarantees it exists to provide, or a case fails
+    ok = all((ga[m][0] or 0) >= 0.999 for m in ("outcome", "budget", "dates", "overlaps", "rain", "prices", "schema"))
+    return 0 if ok and not broken else 1
 
 
 if __name__ == "__main__":

@@ -308,11 +308,46 @@ How to read it:
   failed. Records made before this change still show it as failed. Only answered lookups count as "From cache".
 * Daily limits are what this app counted today against its own settings. Providers have their own limits, and the app
   cannot see a bill.
-* Test scores come from `backend/evals/report.md`, so they change only when `python evals/run_evals.py` is run again.
+* The Overview tab's test scores come from `backend/evals/report.md`, so they change only when
+  `python evals/run_evals.py` is run again.
 * With the most records it keeps (5,000 requests), a tab can take a few seconds to load.
 * A rule on the Guardrails tab can stop an ordinary message by mistake, so a count there is not a count of attacks.
   Only limits hit by recorded requests appear.
-* A tab for evaluations (test scores over time, comparisons and live AI tests) is not built yet.
+* The Evaluations tab shows saved test results. It never starts a test.
+
+### Evaluations
+
+The Evaluations tab shows test runs on made-up requests, so the filters of the other tabs do not apply to it. You
+start every test yourself, from the `backend` folder. Results are kept in `.runtime/evals/` (the newest 100 offline
+runs and 30 live and voice runs).
+
+| Test | Command | Needs |
+| --- | --- | --- |
+| Offline | `python evals/run_evals.py` | nothing: no internet, no AI, fixed date, so the same code gives the same result |
+| Live AI | `python evals/run_live_evals.py` (`--list` shows the plan and calls nothing) | an AI key in `.env` |
+| Voice (optional) | `python evals/run_voice_test.py --list`, record, then run without `--list` | `GROQ_API_KEY` |
+
+**Offline.** The 23 planning requests (planner against a single-agent baseline), `reading_cases.json` (exact start
+dates and other phrasings) and `chat_cases.json` (answers, fixed replies, and that the chat never books). A
+**known gap** is something the planner is known to get wrong: it is listed, not counted in the pass rates, and
+reported when it starts passing. Today's gaps: dates written only with numbers (`20/12/2026`, `2026-12-20`),
+"Christmas" and "tomorrow" (the planner assumes a date and says none was given), and numbers of travellers written
+as words ("four of us", "two adults"). The tab keeps a history and says which cases changed since the run before.
+
+**Live AI.** Four jobs, each provider on its own: reading a request (rules alone against rules with the AI),
+ordering activities (rules against AI), the plan summary and chat answers (checked with the made-up fact checks;
+questions the plan cannot answer must say so). Plans are built offline, so only the AI is live. The saved-answer
+cache is off. A run makes **at most 100 calls, retries and the AI judge included**; the calls also count toward the
+app's daily limit per provider. The judge runs last with what is left: another provider where one is available,
+otherwise the same one, which the tab says. When it compares two activity lists it is not told which is the AI's.
+On the tab you can mark each answer **Good** or **Wrong**. These are a few cases per job: enough to spot problems,
+not to prove that one model is better.
+
+**Voice.** You record ten set sentences (`01.m4a` to `10.m4a` in `.runtime/voice_test/`). It checks whether the
+planner reads the right places, numbers and dates from the transcript. Only pass or fail per detail is saved, never
+the transcript or the sound. The recordings stay where you put them until you delete them.
+
+Live and voice results are not part of the request records on the other tabs.
 
 ### Made-up fact checks
 

@@ -148,6 +148,11 @@ td small.saved { display:block; overflow-wrap:anywhere; white-space:pre-line; }
 .verdict button[aria-pressed="true"] { background:var(--ink); border-color:var(--ink); color:#fff; }
 .verdict small { color:var(--muted); }
 .limits { margin:4px 0; padding-left:18px; }
+.choices { display:flex; flex-wrap:wrap; gap:8px 14px; }
+.choices select { max-width:100%; }
+.flagged q { overflow-wrap:anywhere; }
+.ai-answer { white-space:pre-wrap; overflow-wrap:anywhere; background:var(--page); border-radius:7px; padding:8px 10px; font-size:13px; }
+.facts.stacked { grid-template-columns:1fr; gap:2px; }
 
 /* timeline of one request */
 .waterfall { list-style:none; margin:0; padding:0; }
