@@ -128,6 +128,8 @@ def judge_lines(j: dict) -> list[str]:
     states = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in s["statuses"].items() if n)
     lines += [f"Judge: {j['provider']} {j['model']}, run {j['timestamp']}; {j['calls_used']} of {j['limit']} calls. "
               f"Plans: {j['plans']}.", "", f"- Cases: {s['cases']} ({states})"]
+    if j.get("stopped"):
+        lines.append("- **The run was stopped early.** Cases marked not run were never scored.")
     planted = s["planted_problems"]
     lines.append(f"- Planted problems: noticed {planted['noticed']} of {planted['total']}, missed "
                  f"{planted['missed']}, not checked {planted['not_checked']}. A judge that misses these should not "

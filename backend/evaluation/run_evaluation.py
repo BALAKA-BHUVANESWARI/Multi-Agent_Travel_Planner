@@ -81,7 +81,8 @@ def save(data: dict, out: Path) -> tuple[Path, Path]:
 
 
 def _waiting(provider: str, seconds: float) -> None:
-    print(f"  {provider} says too many requests: waiting {seconds:.0f} s (Ctrl+C stops)", flush=True)
+    print(f"  {provider} says too many requests: waiting {seconds:.0f} s "
+          "(Ctrl+C stops and keeps the finished scores)", flush=True)
 
 
 def _judged(row: dict) -> None:
@@ -155,13 +156,9 @@ def main(argv: list[str] | None = None) -> int:
     data["performance"] = parts
     data["judge"] = judge.not_run(judge_cases)
     if args.judge:
-        try:
-            data["judge"] = judge.run(env, cases=judge_cases, limit=args.judge_limit, on_item=_judged,
-                                      db=config.runtime_path(env.get("TRIP_DB"), "travel_planner.db"),
-                                      on_wait=_waiting)
-        except KeyboardInterrupt:
-            print("\nThe judge was stopped; its results are not in the report.")
-            return 130
+        data["judge"] = judge.run(env, cases=judge_cases, limit=args.judge_limit, on_item=_judged,
+                                  db=config.runtime_path(env.get("TRIP_DB"), "travel_planner.db"),
+                                  on_wait=_waiting)
         used = data["judge"]["tokens"]
         data["tokens"] = {"llm_calls": data["judge"]["calls_used"], "tokens_in": used["tokens_in"],
                           "tokens_out": used["tokens_out"],
@@ -189,13 +186,18 @@ def main(argv: list[str] | None = None) -> int:
               "(not live speed)")
     if "records" in parts:
         print(f"your records: {parts['records']['requests']} request(s) measured")
+    stopped = bool(data["judge"].get("stopped"))
     if args.judge:
+        if stopped:
+            print("The judge was stopped early. The scores it had finished are saved.")
         s = data["judge"]["summary"]
         print(f"AI judge: {s['statuses']['scored']} of {s['cases']} cases scored, planted problems noticed "
               f"{s['planted_problems']['noticed']} of {s['planted_problems']['total']}; saved as {kept}")
     else:
         print(f"AI judge: not run ({len(judge_cases)} cases; see --judge-list)")
     print(f"reports: {readable}\n         {machine}")
+    if stopped:
+        return 130
     if args.agent == JUDGE:
         return 0 if data["judge"]["summary"]["statuses"]["scored"] else 1
     return 1 if data["summary"]["all"]["failed"] or data["summary"]["all"]["error"] else 0

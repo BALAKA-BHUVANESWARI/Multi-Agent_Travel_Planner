@@ -282,14 +282,21 @@ def run(env, *, cases: list[dict] | None = None, limit: int | None = None, db: s
     state = live._Run(mine, store, budget, counted, sleep, pause, lambda item: None, random.Random(0))
     state.on_wait = on_wait
     rows: list[dict] = []
+    model = ""
+    stopped = False
+
+    def blank(case: dict, reason: str = "") -> dict:
+        row = {"id": case["id"], "category": case["category"], "target": case["target"],
+               "description": case["description"], "status": NOT_RUN, "reason": reason, "scores": {},
+               "unsupported_claims": []}
+        if case["target"] == "judge_check":
+            row["planted"] = dict(case["expected"])
+        return row
+
     try:
         model = (state.router(provider), state.models[provider])[1]
         for case in cases:
-            row = {"id": case["id"], "category": case["category"], "target": case["target"],
-                   "description": case["description"], "status": NOT_RUN, "reason": "", "scores": {},
-                   "unsupported_claims": []}
-            if case["target"] == "judge_check":
-                row["planted"] = dict(case["expected"])
+            row = blank(case)
             dimensions = case["expected"]["dimensions"]
             why = state.ready(provider)
             if why:
@@ -318,6 +325,10 @@ def run(env, *, cases: list[dict] | None = None, limit: int | None = None, db: s
                     row.update(status=ERROR, reason=f"the test itself failed: {type(e).__name__}")
             rows.append(row)
             on_item(row)
+    except KeyboardInterrupt:                               # Ctrl+C: the scores already paid for are kept
+        stopped = True
+        seen = {r["id"] for r in rows}
+        rows += [blank(c, "the run was stopped before this case was scored") for c in cases if c["id"] not in seen]
     finally:
         store.close()
     by_id = {r["id"]: r for r in rows}
@@ -325,7 +336,7 @@ def run(env, *, cases: list[dict] | None = None, limit: int | None = None, db: s
         if row["target"] == "judge_check":
             row["check"] = _check(row, by_id)
     known = [u for u in usage if u]
-    return {"ran": True, "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+    return {"ran": True, "stopped": stopped, "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
             "provider": provider, "model": model, "calls_used": budget.used, "limit": budget.limit,
             "plans": "built offline by the app's own rules and templates; no AI wrote them",
             "tokens": {"calls_with_counts": len(known), "calls_without_counts": len(usage) - len(known),

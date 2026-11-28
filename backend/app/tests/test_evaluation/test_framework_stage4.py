@@ -279,6 +279,36 @@ def test_your_dotenv_settings_never_reach_the_fixed_checks(tmp_path, no_calls, m
     assert "TOOLS_MODE" not in os.environ and "GROQ_API_KEY" not in os.environ
 
 
+@pytest.mark.parametrize("where", ["during a call", "while waiting"])
+def test_stopping_the_judge_keeps_the_finished_scores(tmp_path, no_calls, monkeypatch, capsys, where):
+    pretend = PretendJudge()
+
+    def stop(*a):
+        raise KeyboardInterrupt
+
+    def transport(*a):
+        if len(pretend.requests) < 2:
+            return pretend(*a)
+        return stop() if where == "during a call" else (429, {})
+
+    real_run = judge.run
+    monkeypatch.setattr(judge, "default_transport", transport)
+    monkeypatch.setattr(judge, "run", lambda env, **kw: real_run(env, sleep=lambda s: where == "while waiting"
+                                                                 and s == 60 and stop(), pause=0, **kw))
+    monkeypatch.setenv("GROQ_API_KEY", KEY)
+    out = tmp_path / "out"
+    assert runner.main(["--agent", "llm_judge", "--judge", "--out", str(out)]) == 130
+    kept = list((out / "judge").glob("judge_*.json"))
+    assert len(kept) == 1
+    record = json.loads(kept[0].read_text(encoding="utf-8"))
+    states = [r["status"] for r in record["cases"]]
+    assert record["stopped"] and states == ["scored", "scored"] + ["not_run"] * (len(judge.load()) - 2)
+    assert record["summary"]["planted_problems"]["noticed"] == 0
+    assert record["summary"]["planted_problems"]["not_checked"] == 3
+    assert "stopped early" in (out / "report.md").read_text(encoding="utf-8")
+    assert "stopped early" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------- cost
 USE = [{"model": "a", "tokens_in": 1_000_000, "tokens_out": 500_000}, {"model": "a", "tokens_in": 3, "tokens_out": 0},
        {"model": "b", "tokens_in": 10, "tokens_out": 10}]

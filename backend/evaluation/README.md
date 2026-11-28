@@ -229,10 +229,12 @@ differently another time.
 give the judge a separate model. All three are optional; without them it uses the first provider that has a key.
 `JUDGE_MODEL` needs `JUDGE_PROVIDER`.
 
-**Limits.** One call per case (9 now), plus retries, never more than 100 a run, or `--judge-limit`. The saved-answer
-cache is off, calls count toward the app's daily limit, it pauses between calls and waits a minute after "too many
-requests". After three unanswered cases in a row the rest are marked *not run*. A reply that does not fit the
-rubric is *invalid* and is never scored.
+**Limits.** One call per case (9 now), plus retries, never more than 100 a run, or `--judge-limit`. The
+saved-answer cache is off, calls count toward the app's daily limit, it pauses between calls and waits a minute
+after "too many requests", so a free tier can make a run take several minutes. If you stop it with Ctrl+C, the
+finished scores are saved and reported, the other cases are marked *not run* and the exit code is 130. A new run
+starts from the first case again. After three unanswered cases in a row the rest are marked *not run*. A reply that
+does not fit the rubric is *invalid* and is never scored.
 
 ## Speed and cost
 
