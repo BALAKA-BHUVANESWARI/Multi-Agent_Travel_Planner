@@ -25,7 +25,9 @@ def test_workers_run_concurrently(make):
     assert {c["name"] for c in first5} == {"search_flights", "search_hotels", "get_weather", "search_places",
                                            "search_dining"}
     assert max(c["start"] for c in first5) < min(c["end"] for c in first5), "calls must overlap in time"
-    assert elapsed < 0.3 * 2.2, f"sequential would take ~1.2s; took {elapsed:.2f}s"
+    # two rounds of 0.3s (the searches together, then the suggestions) plus room for a slow moment;
+    # one call after another would take about 1.8s
+    assert elapsed < 0.3 * 3, f"one call after another would take ~1.8s; took {elapsed:.2f}s"
 
 
 def test_transient_failure_retried_with_exponential_backoff(make):
