@@ -171,7 +171,7 @@ python evals/run_voice_test.py --list     # optional voice test
 ```
 
 The metrics dashboard's Evaluations tab shows the saved results ([details](docs/features.md#evaluations)). The
-offline cases also list **known gaps** in how requests are read, such as dates written only with numbers.
+offline cases can also list **known gaps** in how requests are read; none are listed at the moment.
 
 On the 23 evaluation prompts (offline tools, fixed date) the multi-agent graph gets the expected outcome for **100%**,
 against **61%** for a single agent with the same tools. Most of the gap comes from budget re-planning. The full

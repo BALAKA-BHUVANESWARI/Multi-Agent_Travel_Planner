@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from app.core import config
 from app.data import gazetteer
 from app.data.curated_destinations import ALIASES, CITIES, DESTINATIONS
+from app.services import date_words
 
 MONTHS = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6, "july": 7, "august": 8,
@@ -99,6 +100,9 @@ def parse_days(text: str) -> int | None:
         return 7 * n
     if re.search(r"\bweek\s?-?\s?long\b|\ba week\b|\bone week\b", low):
         return 7
+    m = re.search(r"\b(" + "|".join(words) + r")[- ]nights?\b", low)           # "five nights" is 6 days
+    if m:
+        return words[m.group(1)] + 1
     if re.search(r"\bweekend\b", low):
         return 3
     return None
@@ -129,6 +133,40 @@ def parse_month(text: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+_WORD_COUNTS = {w: n for n, w in enumerate("one two three four five six seven eight nine ten eleven twelve".split(), 1)}
+_WORDS = "|".join(_WORD_COUNTS)
+_PEOPLE_WORDS = (r"(adults?|people|persons?|pax|travell?ers?|friends|guys|girls|kids?|child(?:ren)?|seniors?|of us)"
+                 r"(?![\w-])")
+_COUPLE = (r"\bcouple\b|\bhoneymoon\b|\bwith my (wife|husband|girlfriend|boyfriend|partner|spouse|"
+           r"fianc[eé]e?)\b|\bmy (wife|husband|partner) and i\b|\bme and my (wife|husband|partner)\b")
+
+
+def _count_in_words(low: str) -> int | None:
+    """"four of us", "two adults and one child", "family of four", "me and two friends", "for two"."""
+    m = re.search(rf"\b(?:family|group|party|team)\s+of\s+({_WORDS})\b", low)
+    if m:
+        return _WORD_COUNTS[m.group(1)]
+    m = re.search(rf"\b(?:(?:me|myself|i)\s*(?:and|\+|&)|with)\s+(?:my\s+)?({_WORDS})\s+(?:of\s+my\s+)?"
+                  r"(?:friends|cousins|colleagues|buddies|siblings)\b", low)
+    if m:
+        return _WORD_COUNTS[m.group(1)] + 1
+    grown = children = 0
+    # "two of us are vegetarian" or "one of us loves beaches" describes some of the group, not its size
+    for m in re.finditer(rf"\b({_WORDS})\s+(?:more\s+)?{_PEOPLE_WORDS}"
+                         r"(?!\s+(?:is|are|loves?|likes?|wants?|prefers?|needs?|can|has|have)\b)", low):
+        if m.group(2) in ("kid", "kids", "child", "children"):
+            children += _WORD_COUNTS[m.group(1)]
+        else:
+            grown += _WORD_COUNTS[m.group(1)]
+    if grown:
+        return grown + children
+    if children:                                  # children alone do not say how many adults are going
+        return children + 2 if re.search(_COUPLE, low) else None
+    # "for two", but not "for two days", "for two weeks" or "for two lakh"
+    m = re.search(rf"\bfor\s+({_WORDS})(?=\s*(?:$|[,.;!?|]|(?:with|under|in|on|from|to|by|budget|starting)\b))", low)
+    return _WORD_COUNTS[m.group(1)] if m else None
+
+
 def parse_travelers(text: str) -> tuple[int | None, bool]:
     """Return (count, assumed). assumed=True when a count had to be guessed (e.g. 'family')."""
     low = text.lower()
@@ -141,12 +179,14 @@ def parse_travelers(text: str) -> tuple[int | None, bool]:
         return int(m.group(1)) + 1, False
     total = 0
     for m in re.finditer(r"(\d+)\s*(?:adults?|people|persons?|pax|travell?ers?|friends|guys|girls|"
-                         r"kids?|children|seniors?|of us)", low):
+                         r"kids?|child(?:ren)?|seniors?|of us)", low):
         total += int(m.group(1))
     if total:
         return total, False
-    if re.search(r"\bcouple\b|\bhoneymoon\b|\bwith my (wife|husband|girlfriend|boyfriend|partner|spouse|"
-                 r"fianc[eé]e?)\b|\bmy (wife|husband|partner) and i\b|\bme and my (wife|husband|partner)\b", low):
+    in_words = _count_in_words(low)
+    if in_words:
+        return in_words, False
+    if re.search(_COUPLE, low):
         return 2, False
     if re.search(r"\bwith my parents\b", low):
         return 3, False
@@ -375,11 +415,42 @@ def parse_scope(text: str) -> str:
     return "any"
 
 
+def _start_date(numeric: date | None, unreadable: str | None, christmas: int | None, ahead: int | None,
+                month: int | None, day: int | None, today: date) -> tuple[date, int | None, list[str]]:
+    """The start date, its month and what to tell the traveller about it. A date in numbers wins, then a day
+    with a month, then "Christmas" (unless another month is named), then "tomorrow", then the month alone."""
+    notes: list[str] = []
+    if unreadable and numeric is None:
+        notes.append(f"I could not read '{unreadable}' as a date: numbers are read day first (day/month/year).")
+    if numeric is not None:
+        if numeric > today:
+            return numeric, numeric.month, notes
+        start, _ = compute_start_date(numeric.month, numeric.day, today)
+        notes.append(f"{numeric.isoformat()} is not in the future: assumed the trip starts {start.isoformat()}.")
+        return start, start.month, notes
+    if day is None:
+        if christmas is not None and month in (None, 12):
+            start = date_words.next_christmas(christmas, today)
+            notes.append(f"Read 'Christmas' as a start date of {start.isoformat()}.")
+            return start, 12, notes
+        if ahead is not None and month is None:
+            start = date_words.days_from(today, ahead)
+            said = "day after tomorrow" if ahead == 2 else "tomorrow"
+            notes.append(f"Read '{said}' as a start date of {start.isoformat()}.")
+            return start, start.month, notes
+    start, assumed = compute_start_date(month, day, today)
+    if assumed:
+        notes.append(f"No travel month given: assumed the trip starts around {start.isoformat()}.")
+    return start, month, notes
+
+
 def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     """Return {constraints, missing, invalid, assumptions}. ``group_size``: how many people filled in the
     group-preferences form (0 when it was not used)."""
     text, place_answers = split_place_answers(text)             # first: a chosen name must not be read as text
     text, chosen = split_destination_choice(text)
+    text, numeric, unreadable = date_words.take_numeric_date(text)    # so "20/12/2026" is not read as a budget
+    text, christmas, ahead = date_words.take_named_days(text)         # so "tomorrow" is not part of a place name
     origin, dest, texts = parse_places(text)
     if chosen:
         dest = None
@@ -410,9 +481,8 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     if budget is not None and per_person:
         budget *= travelers
         assumptions.append("Budget read as per person and multiplied by the number of travelers.")
-    start, assumed_start = compute_start_date(month, day, today)
-    if assumed_start:
-        assumptions.append(f"No travel month given: assumed the trip starts around {start.isoformat()}.")
+    start, month, date_notes = _start_date(numeric, unreadable, christmas, ahead, month, day, today)
+    assumptions += date_notes
     constraints = {
         "origin": origin, "destination": dest, "days": days, "month": month,
         "start_date": start.isoformat(), "budget": budget, "travelers": travelers,

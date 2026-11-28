@@ -2,7 +2,7 @@
  "reading": [
   {"id": "read-fortnight", "text": "a fortnight in Goa from Delhi with a budget of two lakh", "expect": {"origin": "delhi", "destination": "goa", "days": 14, "budget": 200000}},
   {"id": "read-dilli", "text": "Goa from Dilli for 5 days, fifty thousand rupees total", "expect": {"origin": "delhi", "destination": "goa", "days": 5, "budget": 50000}},
-  {"id": "read-nights", "text": "me and the missus, five nights in Udaipur from Pune, 80k", "expect": {"origin": "pune", "destination": "udaipur", "days": 6, "budget": 80000, "travelers": 2}},
+  {"id": "read-nights", "text": "me and the missus, paanch raatein in Udaipur from Pune, 80k", "expect": {"origin": "pune", "destination": "udaipur", "days": 6, "budget": 80000, "travelers": 2}},
   {"id": "read-4d3n", "text": "from Bombay to Kochi, 4D/3N, Rs.45,000 for two adults", "expect": {"origin": "mumbai", "destination": "kochi", "days": 4, "budget": 45000, "travelers": 2}},
   {"id": "read-hindi-words", "text": "Delhi se Jaipur 3 din, budget 30 hazar", "expect": {"origin": "delhi", "destination": "jaipur", "days": 3, "budget": 30000}},
   {"id": "read-words-budget", "text": "Plan Ooty from Coimbatore, 2 nights, under twenty five thousand", "expect": {"origin": "coimbatore", "destination": "ooty", "days": 3, "budget": 25000}},

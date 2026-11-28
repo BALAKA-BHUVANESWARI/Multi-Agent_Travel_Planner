@@ -7,6 +7,7 @@ import pytest
 from app.evaluation import live, results
 from app.observability import recorder as observe
 from app.services.llm_service import LLMRouter
+from app.services.request_parser import parse_request
 
 KEYS = {"GROQ_API_KEY": "gsk_pretend_secret_000111", "GEMINI_API_KEY": "AIzaPretendSecret222333"}
 CASES = live.load_cases()
@@ -213,3 +214,10 @@ def test_the_account_name_in_a_provider_error_is_not_saved(tmp_path):
     record = run(tmp_path, limited, cases=small(reading=1))
     assert "org_***" in record["items"][0]["problems"][0]
     assert "01abcdef2345" not in json.dumps(results.runs("live"))
+
+
+def test_every_live_reading_case_leaves_the_ai_something_to_read():
+    """If the rules read everything, the AI is never asked and a healthy provider looks silent."""
+    for case in CASES["reading"]:
+        parsed = parse_request(case["text"], live.TODAY)
+        assert parsed["missing"] or parsed["invalid"], case["id"]

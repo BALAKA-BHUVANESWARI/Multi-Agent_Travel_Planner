@@ -330,9 +330,14 @@ runs and 30 live and voice runs).
 **Offline.** The 23 planning requests (planner against a single-agent baseline), `reading_cases.json` (exact start
 dates and other phrasings) and `chat_cases.json` (answers, fixed replies, and that the chat never books). A
 **known gap** is something the planner is known to get wrong: it is listed, not counted in the pass rates, and
-reported when it starts passing. Today's gaps: dates written only with numbers (`20/12/2026`, `2026-12-20`),
-"Christmas" and "tomorrow" (the planner assumes a date and says none was given), and numbers of travellers written
-as words ("four of us", "two adults"). The tab keeps a history and says which cases changed since the run before.
+reported when it starts passing. No gaps are listed at the moment. The tab keeps a history and says which cases
+changed since the run before.
+
+**Wording the rules read.** Dates in numbers with a year (`20/12/2026`, `20-12-2026`, `2026-12-20`), read **day
+first**; `20/12` without a year is not read. "Christmas" (25 December, "Christmas eve" 24), "tomorrow" and "day after
+tomorrow", with a note that says which date was used. Traveller counts in words up to twelve ("four of us", "two
+adults and one child"), "five nights" (6 days) and "Dilli" for Delhi. These apply to new requests; a change request
+on a finished plan still needs a day and a month in words ("move it to 20 December").
 
 **Live AI.** Four jobs, each provider on its own: reading a request (rules alone against rules with the AI),
 ordering activities (rules against AI), the plan summary and chat answers (checked with the made-up fact checks;

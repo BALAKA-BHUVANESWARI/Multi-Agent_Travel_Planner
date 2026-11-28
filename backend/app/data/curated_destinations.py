@@ -254,7 +254,7 @@ CITIES = {
 }
 
 ALIASES = {
-    "delhi": ["delhi", "new delhi", "ncr", "delhi ncr", "gurgaon", "gurugram", "noida"],
+    "delhi": ["delhi", "new delhi", "dilli", "ncr", "delhi ncr", "gurgaon", "gurugram", "noida"],
     "mumbai": ["mumbai", "bombay"],
     "bengaluru": ["bengaluru", "bangalore", "blr"],
     "hyderabad": ["hyderabad"],
