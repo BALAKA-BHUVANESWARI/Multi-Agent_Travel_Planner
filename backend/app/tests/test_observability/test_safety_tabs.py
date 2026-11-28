@@ -55,7 +55,8 @@ def test_guardrails_add_up_by_reason(make, switched_on):
     assert found["acted"] == len(found["recent"]) and {e["check"] for e in found["recent"]} >= {
         "input_check", "writer_amounts", "ai_ranking_ids", "chat_fixed_reply", "sensitive_data_withheld"}
     text = json.dumps(found)
-    assert "4111" not in text and "system prompt" not in text
+    # the card number itself: four digits alone can turn up inside a random record id
+    assert "4111 1111" not in text and "41111111" not in text and "system prompt" not in text
     assert "visa for Thailand" not in text and "emergency number in Goa" not in text
 
 
@@ -181,7 +182,8 @@ def test_both_tabs_can_be_downloaded(make, switched_on):
         body, kind, name = board.export({"what": what, "format": "csv"}, token)
         rows = list(csv.DictReader(io.StringIO(body.decode("utf-8-sig"))))
         assert kind == "text/csv" and name.startswith(f"metrics-{what}-") and rows and column in rows[0]
-        assert "25 December" not in body.decode("utf-8") and "4111" not in body.decode("utf-8")
+        text = body.decode("utf-8")
+        assert "25 December" not in text and "4111 1111" not in text and "41111111" not in text
 
 
 def test_the_tabs_work_with_no_records(make, switched_on):

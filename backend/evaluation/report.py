@@ -26,6 +26,22 @@ def latency(rows: list[dict]) -> dict:
             "total_s": round(sum(times), 3)}
 
 
+def measures(rows: list[dict]) -> dict:
+    """Per part of the planner: how many single checks were made, and the average of every measured share."""
+    out = {}
+    for name in sorted({r["agent"] for r in rows}):
+        mine = [r for r in rows if r["agent"] == name and r["target"] == "planner"]
+        shares: dict = {}
+        for r in mine:
+            for key, value in (r.get("measured") or {}).items():
+                if key.endswith("_share"):
+                    shares.setdefault(key, []).append(value)
+        out[name] = {"checks_made": sum((r.get("measured") or {}).get("checks_made", 0) for r in mine),
+                     "averages": {k: {"mean": round(sum(v) / len(v), 2), "cases": len(v)}
+                                  for k, v in sorted(shares.items())}}
+    return out
+
+
 def build(rows: list[dict], meta: dict) -> dict:
     def grouped(key):
         names = sorted({r[key] for r in rows})
@@ -34,6 +50,7 @@ def build(rows: list[dict], meta: dict) -> dict:
     return {**meta, "summary": {"all": counts(rows), **{t: counts([r for r in rows if r["target"] == t])
                                                         for t in TITLES}},
             "by_agent": grouped("agent"), "by_category": grouped("category"),
+            "metrics": measures(rows),
             "latency": latency(rows),
             "tokens": {"llm_calls": 0, "tokens_in": 0, "tokens_out": 0,
                        "note": "the deterministic evaluations make no AI calls"},
@@ -64,6 +81,13 @@ def markdown(data: dict) -> str:
         for name, groups in data[key].items():
             lines += [_row(f"{name} ({'planner' if t == 'planner' else 'self-check'})", c)
                       for t, c in groups.items() if c["total"]]
+    counted = {n: m for n, m in data.get("metrics", {}).items() if m["checks_made"] or m["averages"]}
+    if counted:
+        lines += ["", "## Measures (planner cases)", "", "| Agent | Single checks made | Averages |", "|---|---|---|"]
+        for name, m in counted.items():
+            shares = "; ".join(f"{k.replace('_', ' ')} {v['mean']:.0%} ({v['cases']} case(s))"
+                               for k, v in m["averages"].items())
+            lines.append(f"| {name} | {m['checks_made']} | {shares or '-'} |")
     for title, wanted in (("Failed cases", (FAILED, ERROR)), ("Not supported by the planner", (NOT_SUPPORTED,)),
                           ("Not run", (NOT_RUN,))):
         chosen = [r for r in data["cases"] if r["status"] in wanted]

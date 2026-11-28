@@ -20,14 +20,22 @@ from app.core import config
 from app.evaluation.results import code_version
 from evaluation import cases as datasets
 from evaluation import harness, report
-from evaluation.evaluators import budget, itinerary
+from evaluation.evaluators import (accommodation, activity, budget, destination, end_to_end, group, itinerary,
+                                   supervisor, transport, weather)
 from evaluation.results import ERROR, FAILED, Result
 
 # name -> (dataset file, evaluator)
-EVALUATORS = {"budget": ("budget_cases.json", budget.evaluate),
-              "itinerary": ("itinerary_cases.json", itinerary.evaluate)}
-NOT_BUILT = ("supervisor", "destination", "transport", "accommodation", "weather", "activity", "end_to_end",
-             "grounding", "replanning", "llm_judge")
+EVALUATORS = {"supervisor": ("supervisor_cases.json", supervisor.evaluate),
+              "destination": ("destination_cases.json", destination.evaluate),
+              "transport": ("transport_cases.json", transport.evaluate),
+              "accommodation": ("accommodation_cases.json", accommodation.evaluate),
+              "weather": ("weather_cases.json", weather.evaluate),
+              "activity": ("activity_cases.json", activity.evaluate),
+              "budget": ("budget_cases.json", budget.evaluate),
+              "itinerary": ("itinerary_cases.json", itinerary.evaluate),
+              "group": ("group_travel_cases.json", group.evaluate),
+              "end_to_end": ("end_to_end_cases.json", end_to_end.evaluate)}
+NOT_BUILT = ("grounding", "replanning", "llm_judge")
 
 
 def run_case(agent: str, case: dict, evaluate) -> dict:

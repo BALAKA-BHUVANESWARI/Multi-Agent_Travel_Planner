@@ -134,10 +134,11 @@ def test_card_number_is_not_in_the_api_response_or_the_database(make, tmp_path):
     service = PlannerService(planner)
     body = service.plan("Plan a Goa trip, my card is 4111 1111 1111 1111")
     assert body["status"] == "blocked" and "card number" in body["message"]
-    assert "4111" not in json.dumps(body)
+    # the card number itself: four digits alone can turn up inside a random trip id
+    assert "4111 1111" not in json.dumps(body) and "41111111" not in json.dumps(body)
     planner.deps.store._conn.close()                       # flush and release the file (Windows cannot read it open)
     raw = b"".join(f.read_bytes() for f in tmp_path.glob("secret_check.db*"))
-    assert raw and b"4111 1111" not in raw and b"4111" not in raw
+    assert raw and b"4111 1111" not in raw and b"41111111" not in raw
 
 
 def test_the_built_web_app_is_served_and_nothing_else(server, tmp_path, monkeypatch):

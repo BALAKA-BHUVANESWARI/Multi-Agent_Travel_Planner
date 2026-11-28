@@ -11,12 +11,13 @@ from dataclasses import asdict, dataclass, field
 PASSED, FAILED, NOT_SUPPORTED, NOT_RUN, ERROR = "passed", "failed", "not_supported", "not_run", "error"
 STATUSES = (PASSED, FAILED, NOT_SUPPORTED, NOT_RUN, ERROR)
 FAIL, WARN, INFO = "fail", "warn", "not_checked"       # how serious one finding is
+UNSUPPORTED = "not_supported"                          # the case asks for something the application cannot do
 
 
 @dataclass(frozen=True)
 class Finding:
     code: str
-    severity: str              # fail (hard failure) | warn | not_checked
+    severity: str              # fail (hard failure) | warn | not_checked | not_supported
     message: str
 
 
