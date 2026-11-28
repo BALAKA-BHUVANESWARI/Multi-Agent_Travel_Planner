@@ -46,7 +46,8 @@ class Checks:
 def make_run(given: dict) -> dict:
     run = harness.run_trip(given["request"], group=given.get("group"), failures=given.get("failures"),
                            changes=given.get("changes"), approve=bool(given.get("approve")),
-                           ask_travel_mode=bool(given.get("ask_travel_mode")))
+                           ask_travel_mode=bool(given.get("ask_travel_mode")), ai=given.get("ai"),
+                           ask=given.get("ask"), live=given.get("live"))
     for change in given.get("damage", []):
         damage(run, change)
     return run

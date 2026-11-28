@@ -20,8 +20,8 @@ from app.core import config
 from app.evaluation.results import code_version
 from evaluation import cases as datasets
 from evaluation import harness, report
-from evaluation.evaluators import (accommodation, activity, budget, destination, end_to_end, group, itinerary,
-                                   supervisor, transport, weather)
+from evaluation.evaluators import (accommodation, activity, budget, destination, end_to_end, grounding, group,
+                                   itinerary, replanning, supervisor, transport, weather)
 from evaluation.results import ERROR, FAILED, Result
 
 # name -> (dataset file, evaluator)
@@ -34,8 +34,10 @@ EVALUATORS = {"supervisor": ("supervisor_cases.json", supervisor.evaluate),
               "budget": ("budget_cases.json", budget.evaluate),
               "itinerary": ("itinerary_cases.json", itinerary.evaluate),
               "group": ("group_travel_cases.json", group.evaluate),
-              "end_to_end": ("end_to_end_cases.json", end_to_end.evaluate)}
-NOT_BUILT = ("grounding", "replanning", "llm_judge")
+              "end_to_end": ("end_to_end_cases.json", end_to_end.evaluate),
+              "grounding": ("grounding_cases.json", grounding.evaluate),
+              "replanning": ("replanning_cases.json", replanning.evaluate)}
+NOT_BUILT = ("llm_judge",)
 
 
 def run_case(agent: str, case: dict, evaluate) -> dict:
