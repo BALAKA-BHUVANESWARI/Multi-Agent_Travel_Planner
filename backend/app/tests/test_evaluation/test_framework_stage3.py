@@ -15,10 +15,7 @@ from evaluation import run_evaluation as runner
 
 NEW = ("grounding", "replanning")
 # problems each one reproduced by hand against the application; a fix removes its line here
-KNOWN_FAILURES = [
-    "rp-cheaper-flight-agents", "rp-cheaper-flight-result", "rp-cheaper-hotel-agents", "rp-cheaper-hotel-result",
-    "rp-flight-to-train-result", "rp-more-history-agents", "rp-no-adventure-agents", "rp-one-more-person-agents",
-    "rp-to-train-agents"]
+KNOWN_FAILURES: list[str] = []
 NOT_SUPPORTED = [
     "grd-full-hotel", "grd-full-live-fare", "grd-full-places", "grd-full-travel", "grd-full-weather",
     "rp-indoor-only-result", "rp-named-member-result", "rp-new-preferences-result", "rp-version"]

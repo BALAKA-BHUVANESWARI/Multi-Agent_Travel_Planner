@@ -92,6 +92,24 @@ writes never conflict. Only `log` and `warnings` are append-only (reducers). Nod
 * **Human approval.** `present` sets `awaiting_approval` and the graph pauses. Decisions: approve, cancel, or
   revise with free text. Feedback is parsed (`services/feedback_parser.py`); unrecognised feedback does not consume a revision.
   After 2 revisions only approve/cancel remain.
+* **What a change searches again.** The Supervisor runs only the searches the change affects; the day plan, budget and
+  checks are always worked out again. A kept result keeps its warnings. A result that is missing or failed,
+  generic stand-in places and a failed restaurant lookup are searched again after any change. A kind of change that
+  is not in the list runs everything.
+
+  | Change | Searches again |
+  | --- | --- |
+  | cheaper hotel | hotel |
+  | cheaper flight, or another way to travel | travel |
+  | one more or one fewer traveller | travel, hotel |
+  | number of days or start date | travel, hotel, weather |
+  | budget, or the whole trip cheaper or upgraded | travel, hotel, activities |
+  | more of an interest, or something left out | activities |
+  | pace | none |
+  | destination | all four |
+
+  If the new total is over budget, the budget loop then lowers the price level and searches travel, hotel and
+  activities again.
 * **Booking.** The key is a hash of thread, destination, dates, travelers and total. A second approve (double
   click, retry, restart) finds the stored booking and returns it; the tool is not called again.
 

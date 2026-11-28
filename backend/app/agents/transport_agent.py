@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.agents.common import agent_failure, in_fanout
-from app.core.utils import fmt_inr
+from app.core.utils import fmt_inr, part_level
 from app.data.curated_destinations import place_name
 from app.graph.state import entry
 from app.services.export_service import price_tag, short_date
@@ -98,13 +98,14 @@ def flight_node(state: dict, deps) -> dict:
                               travelers=c["travelers"], origin_geo=c.get("origin_geo"),
                               destination_geo=c.get("destination_geo"),
                               mode=(c.get("travel_mode") if c.get("travel_mode") not in (None, "auto") else None))
-        sel = dict(pick_flight(res["options"], state["strategy"]))
+        level = part_level(state, "flight")
+        sel = dict(pick_flight(res["options"], level))
         sel["total"] = sel["price_pp"] * c["travelers"]
     except (ToolError, KeyError, ValueError) as e:
         return agent_failure("flight", "flight", e, MODE_LABEL.get(c.get("travel_mode"), "Travel") + " search")
     live = res.get("estimated") is False
     out = {"flight": {"selected": sel, "options": res["options"], "estimated": not live, "live": live,
-                      "strategy": state["strategy"], "source": res.get("source"),
+                      "strategy": level, "source": res.get("source"),
                       "fetched_at": res.get("fetched_at"), "price_basis": res.get("price_basis")},
            "log": [entry("flight", f"picked '{sel['id']}' {fmt_inr(sel['price_pp'])} pp "
                                    f"({price_tag(res) if live else 'estimated'})")]}
@@ -116,6 +117,7 @@ def flight_node(state: dict, deps) -> dict:
         out["flight"]["footprint"] = emissions
     if res.get("live_note"):
         out["warnings"] = [res["live_note"]]
+        out["flight"]["notices"] = out["warnings"]         # said again if a later change keeps this result
     return out
 
 

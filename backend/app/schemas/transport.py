@@ -65,3 +65,4 @@ class TransportResult(TypedDict):
     price_basis: NotRequired[str | None]
     journey: NotRequired[Journey]
     footprint: NotRequired[dict]
+    notices: NotRequired[list[str]]      # warnings this search raised; repeated if a change keeps the result

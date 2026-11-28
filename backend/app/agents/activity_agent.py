@@ -175,7 +175,7 @@ def activities_node(state: dict, deps) -> dict:
     out = {"activities": {"candidates": ranked, "tips": tips, "nearby": nearby, "estimated": True,
                           "attribution": attribution, "llm_reranked": used_llm,
                           "data_quality": quality, "top_sights": guide.top_sights(cands),
-                          "top_sights_note": guide.NOTE, "dining": dine}, "warnings": notes,
+                          "top_sights_note": guide.NOTE, "dining": dine, "notices": notes}, "warnings": notes,
             "log": [entry("activities", f"{len(ranked)} candidates for strategy '{state['strategy']}'"
                                         + (" (LLM re-ranked)" if used_llm else "")
                                         + llm_note(deps, "activities", used_llm)

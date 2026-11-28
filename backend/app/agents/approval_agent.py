@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.agents.accommodation_agent import pick_hotel
 from app.agents.destination_agent import find_alternatives, find_place, trip_warnings
-from app.agents.transport_agent import travel_mode_problem
+from app.agents.transport_agent import MODE_LABEL, pick_flight, travel_mode_problem
 from app.core import config
 from app.core import security as guardrails
-from app.core.utils import fmt_inr
+from app.core.utils import fmt_inr, next_strategy, part_level
 from app.graph.state import RESET, entry
 from app.services import geo_service as geo_mod
 from app.services import request_parser as intake_mod
@@ -30,6 +31,39 @@ def present_node(state: dict, deps) -> dict:
                                  "auto_replans_used": state.get("retries", 0)},
             "summary": render_summary({**state, "alternatives": alternatives}),
             "log": [entry("present", "awaiting human approval")]}
+
+
+_PART_PRICE = {"hotel": (pick_hotel, "price_night_per_room"), "flight": (pick_flight, "price_pp")}
+
+
+def _cheaper_levels(state: dict, parts: list[str], searched_again: bool) -> tuple[dict, list[str], list[str]]:
+    """The new price level of each part that can be made cheaper.
+    Returns (levels, parts that will be cheaper, plain-language notes). ``searched_again``: the way of travelling
+    or the destination changes too, so the earlier options say nothing about the new ones."""
+    levels = dict(state.get("part_levels") or {})
+    done, notes = [], []
+    for part in parts:
+        mode = (state.get("constraints") or {}).get("travel_mode")
+        name = "hotel" if part == "hotel" else MODE_LABEL.get(mode, "travel").lower()
+        pick, price = _PART_PRICE[part]
+        block = state.get(part) or {}
+        selected, options = block.get("selected"), block.get("options") or []
+        level = part_level(state, part)
+        wanted = next_strategy(level)
+        if selected and options and not searched_again:       # the first lower level that really costs less
+            while wanted != level and not pick(options, wanted)[price] < selected[price]:
+                if next_strategy(wanted) == wanted:
+                    wanted = level
+                else:
+                    wanted = next_strategy(wanted)
+        if wanted == level:
+            notes.append(f"There is no cheaper {name} option than the one in your plan.")
+        else:
+            levels[part] = wanted
+            done.append(part)
+            notes.append(f"Choosing a cheaper {name} option"
+                         + (" (day-plan times follow it)." if part == "flight" else "."))
+    return levels, done, notes
 
 
 def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict, dict, list[str]]:
@@ -113,8 +147,19 @@ def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict,
         c["preferences"] = list(dict.fromkeys(list(c["preferences"]) + ch["preferences_add"]))
     if "travelers" in ch and "budget" not in ch:
         notes.append(f"The total budget stays {fmt_inr(c['budget'])}.")
+    levels = dict(state.get("part_levels") or {})
+    if "budget" in ch or ch.get("strategy") == "normal":
+        levels = {}                                          # back to one price level for the whole trip
+    elif "strategy" in ch:                                   # "make it cheaper": a part already lower goes down too
+        levels = {part: next_strategy(level) for part, level in levels.items()}
+    if "cheaper_parts" in ch:
+        moved = {**state, "part_levels": levels, "strategy": ch.get("strategy", state.get("strategy", "normal"))}
+        levels, done, said = _cheaper_levels(moved, ch.pop("cheaper_parts"),
+                                             bool({"destination", "travel_mode"} & set(ch)))
+        ch.update({f"cheaper_{part}": True for part in done})
+        notes += said
 
-    update: dict = {"constraints": c, "excluded": excluded}
+    update: dict = {"constraints": c, "excluded": excluded, "part_levels": levels, "changed": sorted(ch)}
     if {"destination", "days", "month_day"} & set(ch):
         update["weather"] = None                                   # dates or place moved: fetch weather again
     if "destination" in ch:
@@ -154,9 +199,9 @@ def approval_node(state: dict, decision: dict, deps=None) -> dict:
     if not fb["recognized"]:
         observe.event("guardrail", "feedback_understood", "rejected")
         return {**base, "replan_reason": None,
-                "notice": "I couldn't tell what to change. Try: 'make it cheaper', 'budget 80000', 'make it 4 "
-                          "days', 'add 1 person', 'move it to January', 'go by train', 'change destination to "
-                          "Jaipur', 'skip water sports', 'more food' or 'relaxed pace'.",
+                "notice": "I couldn't tell what to change. Try: 'make it cheaper', 'a cheaper hotel', 'budget "
+                          "80000', 'make it 4 days', 'add 1 person', 'move it to January', 'change flight to train', "
+                          "'change destination to Jaipur', 'skip water sports', 'more food' or 'relaxed pace'.",
                 "log": [entry("approval", "feedback not understood")]}
     update, ch, notes = _apply_changes(state, fb["changes"], fb["notes"], deps) if fb["changes"] \
         else ({}, {}, fb["notes"])

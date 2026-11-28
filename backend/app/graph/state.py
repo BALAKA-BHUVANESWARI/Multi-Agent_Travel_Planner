@@ -48,6 +48,8 @@ class TripState(TypedDict, total=False):
     summary: str
     pending_approval: Optional[dict]
     food_boost: bool
+    part_levels: dict           # a lower price level asked for on one part only ("a cheaper hotel")
+    changed: list               # what the latest change request altered: decides which agents run again
     travel_options: list        # modes offered when the request does not say how to travel
     place_check: dict           # "Did you mean ...?" for a name that only matched a tiny place
     suggestions: list           # destinations offered when the request names none

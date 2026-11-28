@@ -28,3 +28,4 @@ class AccommodationResult(TypedDict):
     fetched_at: NotRequired[str | None]
     price_basis: NotRequired[str | None]
     fx_note: NotRequired[str | None]
+    notices: NotRequired[list[str]]      # warnings this search raised; repeated if a change keeps the result

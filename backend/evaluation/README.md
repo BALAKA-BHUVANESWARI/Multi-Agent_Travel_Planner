@@ -150,18 +150,13 @@ data has them (the offline planner has neither). A straight-line distance is not
 
 ## Known failures
 
-These are real, and the planner is deliberately left unchanged:
+These are real, and not fixed yet:
 
 - `plan-goa-monsoon`: when every day is rainy, all beaches are replaced, nothing says that the only interest was
   dropped, and several slots get a general indoor suggestion.
 - `dst-india-only`: "somewhere in India" is read as a destination called India, so nothing is suggested ("within
   India" works). Seen offline.
 - `e2e-invalid-date-words`: "31 February" becomes 28 February without a word (31/02/2027 in numbers is reported).
-- `rp-cheaper-hotel-result`, `rp-cheaper-flight-result`: "cheaper" lowers the level of the whole plan, so asking
-  for one changes the other and the activities too.
-- `rp-…-agents` (cheaper hotel, cheaper flight, to train, one more person, no adventure, more history): every
-  change searches travel, hotels and activities again. This is one cause, in `agents/supervisor.py`.
-- `rp-flight-to-train-result`: "change flight to train" is not understood ("switch to train" is).
 
 **Not supported:** several destinations in one trip, flexible dates, source links, ratings, amenities, live
 availability offline, opening hours, verified entry fees, weather retrieval times, sources for destination facts,

@@ -64,3 +64,4 @@ class ActivityResult(TypedDict):
     top_sights: NotRequired[list[TopSight]]
     top_sights_note: NotRequired[str]
     dining: NotRequired[Dining]
+    notices: NotRequired[list[str]]      # warnings this search raised; repeated if a change keeps the result

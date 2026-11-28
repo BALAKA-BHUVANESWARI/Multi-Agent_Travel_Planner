@@ -84,7 +84,7 @@ entry, website, stated hours), and the plan says so. Tool: `search_dining`.
 |---|---|
 | Destination suggestions | Leave the destination out ("Suggest a 4 day beach trip from Delhi in January, budget 70k for 2"). A hand-tagged list of about 50 places is priced with the estimator and ranked by interests, season and budget. No Tavily credits are used. Add "abroad" or "in India" to narrow it. |
 | Alternative destinations | Every plan lists up to 3 other places for the same dates and group, with estimated totals compared like for like. |
-| Conversational changes | "make it 4 days", "add 1 person", "move it to January", "go by train", "change destination to Jaipur", "skip water sports", plus budget, cheaper, more food and relaxed pace. A change that is not possible is explained and does not use up a revision (limit: 2). Rules only, so unusual phrasing may not be understood. |
+| Conversational changes | "make it 4 days", "add 1 person", "move it to January", "go by train", "change flight to train", "a cheaper hotel", "a cheaper flight", "change destination to Jaipur", "skip water sports", plus budget, cheaper, more food and relaxed pace. A change searches again only for what it affects. A change that is not possible is explained and does not use up a revision (limit: 2). Rules only, so unusual phrasing may not be understood. |
 | Group preferences | Open "Planning for a group?" and give each person's likes and things to avoid. Activities take turns between people, places everyone wants to avoid are dropped, and "Group fit" shows how each person is served. A place only some want to avoid can still appear, and is listed. |
 | Accounts and memory | Optional local accounts. A signed-in traveller gets "My trips" and saved defaults (home city, interests, travel mode, pace), learned from approved bookings or edited by hand. They only fill what a request does not say, and the plan says when they were used. The budget is never remembered. |
 | Booking cancellation | Two steps: see the refund, then confirm. Booking, cancellation and the refund policy are all **mock**. |
@@ -201,6 +201,12 @@ The **Chat** button (bottom right) opens a chat that uses the same planner as th
 * Strategy ladder: `normal` (3-star, best-value flight) -> `cheaper` (2-star, early/late nonstop, activities <= ₹800 pp)
   -> `cheapest` (budget stay, one-stop fare, activities <= ₹300 pp).
 * Feedback understood: "make it cheaper", "budget 50000", "more food/culture/adventure…", "relaxed pace".
+* **A cheaper hotel or flight alone:** "the hotel is too expensive" or "cheaper train tickets" moves only that part
+  down the ladder, to the first level that really costs less; if there is none, the plan says so and no revision is
+  used. The other part, the activities and the food allowance stay. A cheaper flight can leave at other times, so the
+  day plan's times follow it. The lower choice stays through later changes until you set a new budget or ask for an
+  upgrade. "Make it cheaper" still lowers the whole trip, and so does a message that says both. "Cheaper food" or
+  "cheaper activities" also lower the whole trip, and "a better hotel" returns the whole trip to the normal level.
 
 ## Data sources and honesty
 

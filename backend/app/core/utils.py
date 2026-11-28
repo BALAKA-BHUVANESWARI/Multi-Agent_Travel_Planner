@@ -56,6 +56,13 @@ def strategy_rank(strategy: str) -> int:
     return config.STRATEGIES.index(strategy)
 
 
+def part_level(state: dict, part: str) -> str:
+    """The price level for the "hotel" or the "flight" (any way of travelling): the trip's level, or the lower one
+    the traveller asked for on that part alone."""
+    whole = state.get("strategy", "normal")
+    return max(whole, (state.get("part_levels") or {}).get(part, whole), key=strategy_rank)
+
+
 def clip(text: str, n: int) -> str:
     """Shorten to at most ~n chars on a sentence (else word) boundary, adding an ellipsis if cut."""
     text = " ".join(str(text).split())

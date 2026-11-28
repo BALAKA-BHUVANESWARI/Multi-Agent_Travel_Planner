@@ -1,5 +1,6 @@
-"""Turn human change requests into changes: 'make it cheaper', 'budget 50000', 'more food', 'make it 4 days',
-'add 1 person', 'go by train', 'move it to January', 'change destination to Jaipur', 'skip water sports'.
+"""Turn human change requests into changes: 'make it cheaper', 'a cheaper hotel', 'a cheaper flight', 'budget
+50000', 'more food', 'make it 4 days', 'add 1 person', 'go by train', 'change flight to train', 'move it to January',
+'change destination to Jaipur', 'skip water sports'.
 
 Rules only (no LLM). This module reads the words; the approval agent checks that each change is possible.
 """
@@ -18,6 +19,31 @@ from app.services.request_parser import (
 
 _CHEAPER = re.compile(r"\b(cheaper|cheap|less expensive|reduce (the )?cost|lower (the )?cost|save (some )?money|"
                       r"cut costs?|too expensive|economical|affordable)\b", re.I)
+# "cheaper" said about the hotel or the travel only
+_HOTEL_WORD = r"(?:hotels?|stay|accomm?odation|rooms?|lodging|hostels?|homestays?|place to stay)"
+_TRAVEL_WORD = (r"(?:flights?|air ?fares?|(?:train|bus|flight) (?:tickets?|fares?)|tickets?|trains?|bus(?:es)?|"
+                r"transport(?:ation)?)")
+_PART = rf"(?:{_HOTEL_WORD}|{_TRAVEL_WORD})"
+_PARTS = (rf"{_PART}(?:\s*(?:and|&)\s*(?:(?:a|an|the|my|our)\s+)?{_PART}"
+          r"(?!\s+(?:is|are|should|stays?|can|as)\b))*")
+_BOTH = rf"{_PART}\s*(?:and|&)\s*(?:(?:the|my|our)\s+)?{_PART}"     # "the flight and hotel are ..."
+_NAMED = rf"(?:{_BOTH}(?=\s+(?:are|prices|costs|fares)\b)|{_PART})"
+_BEFORE_PART = r"(?:(?:a|an|the|my|our|some|return|round[- ]trip|\d[- ]star|place for the)\s+){0,2}"
+_LOW = r"(?:cheaper|cheap|less expensive|more affordable|affordable|economical)"
+_PART_CHEAPER = [re.compile(p, re.I) for p in (
+    # "a cheaper hotel", "cheaper flight and hotel"
+    rf"\b{_LOW}\s+{_BEFORE_PART}({_PARTS})\b",
+    # "the hotel is too expensive", "change the hotel to a cheaper one", "make the flight cheaper"
+    rf"\b({_NAMED})\s+(?:(?:price|cost|fare)s?\s+)?(?:(?:is|are|was|seems?|looks?|should be|must be|needs? to be|"
+    rf"to be|to|for)\s+)?(?:(?:a|an|something|a bit|a little|much|way|slightly)\s+)?"
+    rf"(?:{_LOW}|too expensive|too costly)(?:\s+(?:one|option)s?)?\b",
+    # "reduce the hotel cost", "lower the cost of the flight", "save money on the hotel"
+    rf"\b(?:reduce|lower|cut)\s+(?:the\s+|my\s+|our\s+)?(?:(?:cost|price|fare)s?\s+(?:of|for|on)\s+"
+    rf"(?:the\s+|my\s+|our\s+)?({_PARTS})|({_PARTS})\s+(?:cost|price|fare|bill)s?)\b",
+    # "replace the hotel with a cheaper one"
+    rf"\b(?:replace|swap)\s+(?:the\s+|my\s+|our\s+)?({_PART})\s+(?:with|for)\s+(?:(?:a|an|something)\s+)?{_LOW}"
+    r"(?:\s+(?:one|option))?\b",
+    rf"\b(?:save (?:some )?money|spend less)\s+on\s+(?:the\s+|my\s+|our\s+)?({_PARTS})\b")]
 _UPGRADE = re.compile(r"\b(luxury|upgrade|more comfortable|nicer hotel|better hotel|splurge|premium)\b", re.I)
 _RELAXED = re.compile(r"\b(relax(ed)?|slower|slow pace|less rushed|fewer activities|less packed|not so busy|"
                       r"too (busy|packed|rushed)|less (busy|hectic))\b", re.I)
@@ -53,6 +79,14 @@ _MODE_CUE = re.compile(r"\b(?:by|switch(?:\s+it)?\s+to|travel\s+by|go(?:ing)?\s+
                        r"\s+(?:a\s+|the\s+)?(flight|plane|air|train|rail|bus|car|cab|taxi|bike|motorbike)\b"
                        r"(?!\s+(?:ride|tour|rental|safari|museum)\b)|"
                        r"\b(fly|drive|ride)\s+instead\b|\b(?:self[- ]drive|road ?trip)\b", re.I)
+# "change flight to train", "switch from flight to train", "change it to bus", "train instead"
+_MODE_WORD = r"(flight|plane|air|train|rail|bus|car|cab|taxi|bike|motorbike)"
+_MODE_CHANGE = re.compile(
+    r"\b(?:change|switch|replace)\s+(?:(?:the|my|our)\s+)?"
+    r"(?:(?:flight|plane|train|rail|bus|car|bike|travel|transport|journey|mode(?:\s+of\s+travel)?|it|this)\s+)?"
+    r"(?:(?:from|of)\s+(?:a\s+|the\s+)?(?:flight|plane|train|bus|car|bike)\s+)?(?:to|with)\s+(?:a\s+|the\s+)?"
+    rf"{_MODE_WORD}\b(?!\s+(?:ride|tour|rental|safari|museum|station|stand|ticket price)\b)|"
+    rf"\b{_MODE_WORD}\s+instead\b", re.I)
 _DATE_CUE = re.compile(r"\b(move|shift|postpone|prepone|reschedul\w+|start(?:ing)?|travel(?:ling)?\s+in|go\s+in|"
                        r"dates?|instead|change\s+(?:it\s+)?to)\b", re.I)
 _DEST = [re.compile(p, re.I) for p in (
@@ -70,6 +104,24 @@ _SKIP_IGNORE = re.compile(r"^(?:(?:changes?|problems?|worries|rush(?:ing)?|issue
 def _num(match: re.Match) -> int:
     raw = next(g for g in match.groups() if g)
     return int(raw) if raw.isdigit() else _NUM_WORDS[raw.lower()]
+
+
+def _cheaper_parts(low: str) -> tuple[list[str], str]:
+    """(the parts, of "hotel" and "flight" (any way of travelling), that are to be cheaper; the text without them)."""
+    parts: list[str] = []
+    rest = low
+    for pattern in _PART_CHEAPER:
+        while m := pattern.search(rest):
+            named = next(g for g in m.groups() if g)
+            for part, word in (("hotel", _HOTEL_WORD), ("flight", _TRAVEL_WORD)):
+                if re.search(rf"\b{word}\b", named) and part not in parts:
+                    parts.append(part)
+            rest = rest[:m.start()] + " , " + rest[m.end():]
+    return parts, rest
+
+
+def _mode(words: str) -> str | None:
+    return parse_travel_mode("by " + words)
 
 
 def _trip_shape(low: str, constraints: dict, changes: dict, notes: list[str]) -> str:
@@ -98,7 +150,7 @@ def _trip_shape(low: str, constraints: dict, changes: dict, notes: list[str]) ->
 def parse_feedback(text: str, constraints: dict, strategy: str) -> dict:
     """Return {recognized, changes, notes}.
 
-    changes keys: budget, strategy, preferences_add, pace, food_boost, days, travelers, travel_mode,
+    changes keys: cheaper_parts ("hotel", "flight": only these are to be cheaper), budget, strategy, preferences_add, pace, food_boost, days, travelers, travel_mode,
     month_day (month, day), destination (a place name still to be checked), exclude (things to leave out).
     """
     changes: dict = {}
@@ -112,7 +164,11 @@ def parse_feedback(text: str, constraints: dict, strategy: str) -> dict:
         changes["budget"] = amount
         notes.append(f"Budget set to {amount}.")
         changes["strategy"] = "normal"       # new budget: restart from the best-value strategy
-    if _CHEAPER.search(low):
+    parts, others = _cheaper_parts(low)
+    if parts:
+        changes["cheaper_parts"] = parts             # the approval agent checks that something cheaper exists
+    if _CHEAPER.search(others):                      # "cheaper" about the whole trip
+        changes.pop("cheaper_parts", None)           # which covers the hotel and the travel too
         nxt = next_strategy(changes.get("strategy", strategy))
         if nxt == changes.get("strategy", strategy):
             notes.append("Already using the cheapest options; no cheaper tier is available.")
@@ -150,8 +206,14 @@ def parse_feedback(text: str, constraints: dict, strategy: str) -> dict:
                 notes.append(f"Changing the destination to {place}.")
             break
 
-    mode_match = _MODE_CUE.search(low)
-    if mode_match:
+    changed_to = _MODE_CHANGE.search(low)
+    mode_match = None if changed_to else _MODE_CUE.search(low)
+    if changed_to:
+        mode = _mode(next(g for g in changed_to.groups() if g))
+        if mode and mode != "auto" and mode != constraints.get("travel_mode"):
+            changes["travel_mode"] = mode
+            notes.append(f"Travelling by {mode}.")
+    elif mode_match:
         cue = mode_match.group()
         mode = parse_travel_mode("by " + cue) or ("flight" if "fly" in cue else None)
         if mode is None and re.search(r"\b(drive|road ?trip)\b", cue):
