@@ -54,7 +54,7 @@ def build(rows: list[dict], meta: dict) -> dict:
             "latency": latency(rows),
             "tokens": {"llm_calls": 0, "tokens_in": 0, "tokens_out": 0,
                        "note": "the deterministic evaluations make no AI calls"},
-            "estimated_cost": {"value": None, "note": "no AI calls and no prices configured"},
+            "estimated_cost": {"value": None, "note": "not worked out: no AI tokens were used"},
             "cases": rows}
 
 
@@ -65,6 +65,91 @@ def _rate(value) -> str:
 def _row(name: str, c: dict) -> str:
     return (f"| {name} | {c['total']} | {c[PASSED]} | {c[FAILED]} | {c[ERROR]} | {c[NOT_SUPPORTED]} | "
             f"{c[NOT_RUN]} | {_rate(c['pass_rate'])} |")
+
+
+def _ms(value) -> str:
+    return "—" if value is None else f"{value:g} ms"
+
+
+def _measured(value) -> str:
+    return "not measured" if value is None else _rate(value)
+
+
+def performance_lines(p: dict) -> list[str]:
+    lines = ["", f"### Measured from {p['source']}", ""]
+    if p.get("note"):
+        return lines + [f"- {p['note']}"]
+    w, tools, ai, ext = p["workflow"], p["tools"], p["ai"], p["external"]
+    if p.get("outside_services"):
+        lines.append(f"- Outside services: {p['outside_services']}.")
+    for k in w["by_kind"]:
+        lines.append(f"- Workflow, {k['kind']}: {k['count']} request(s), median {_ms(k['median_ms'])}, p90 "
+                     f"{_ms(k['p90_ms'])}, slowest {_ms(k['max_ms'])}")
+    lines += [f"- Requests: {p['requests']}; workflow failure rate {_measured(w['failure_rate'])}; automatic "
+              f"re-plans {w['automatic_replans']}",
+              f"- Tool calls: {tools['calls']}; failure rate {_measured(tools['failure_rate'])}; retries "
+              f"{tools['retries']}",
+              f"- AI: {ai['model_calls']} model call(s); failure rate {_measured(ai['failure_rate'])}; retries "
+              f"{ai['retries']}; tokens in {ai['tokens_in']}, out {ai['tokens_out']}"
+              + (f" ({ai['calls_with_estimated_tokens']} call(s) estimated)"
+                 if ai['calls_with_estimated_tokens'] else "")
+              + f"; answers from cache {_measured(ai['cache_hit_rate'])}",
+              f"- Data lookups: {ext['lookups']}; failure rate {_measured(ext['failure_rate'])}; from cache "
+              f"{_measured(ext['cache_hit_rate'])}; skipped {ext['skipped']}"]
+    if p["agents"]:
+        lines += ["", "| Agent | Runs | Median | p90 | Slowest | Succeeded | Tool calls | Tool retries | AI calls |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+        lines += [f"| {a['agent']} | {a['runs']} | {_ms(a['median_ms'])} | {_ms(a['p90_ms'])} | "
+                  f"{_ms(a['max_ms'])} | {_rate(a['success_rate'])} | {a['tool_calls']} | {a['tool_retries']} | "
+                  f"{a['ai_calls']} |" for a in p["agents"]]
+    if ext["sources"] and not p.get("outside_services"):
+        lines += ["", "| Data source | Lookups | Errors | Timeouts | From cache | Median | p90 |",
+                  "|---|---|---|---|---|---|---|"]
+        lines += [f"| {s['source']} | {s['lookups']} | {s['error']} | {s['timeout']} | {s['from_cache']} | "
+                  f"{_ms(s['median_ms'])} | {_ms(s['p90_ms'])} |" for s in ext["sources"]]
+    if ai["models"]:
+        lines += ["", "| AI job | Model | Calls | Failed | Retries | Tokens in / out | Median | p90 |",
+                  "|---|---|---|---|---|---|---|---|"]
+        lines += [f"| {m['job']} | {m['provider']} {m['model']} | {m['calls']} | {m['failed']} | {m['retries']} | "
+                  f"{m['tokens_in']} / {m['tokens_out']} | {_ms(m['median_ms'])} | {_ms(m['p90_ms'])} |"
+                  for m in ai["models"]]
+    if p.get("cost"):
+        c = p["cost"]
+        lines += ["", "- Cost of these AI calls: "
+                  + (f"{c['value']} {c['currency']}; " if c["value"] is not None else "") + c["note"]]
+    return lines
+
+
+def judge_lines(j: dict) -> list[str]:
+    lines = ["", "## AI judge (opinions, kept apart from every pass rate)", ""]
+    if not j.get("ran"):
+        return lines + [f"{j['cases_waiting']} case(s) {j['note']}"]
+    s = j["summary"]
+    states = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in s["statuses"].items() if n)
+    lines += [f"Judge: {j['provider']} {j['model']}, run {j['timestamp']}; {j['calls_used']} of {j['limit']} calls. "
+              f"Plans: {j['plans']}.", "", f"- Cases: {s['cases']} ({states})"]
+    planted = s["planted_problems"]
+    lines.append(f"- Planted problems: noticed {planted['noticed']} of {planted['total']}, missed "
+                 f"{planted['missed']}, not checked {planted['not_checked']}. A judge that misses these should not "
+                 "be trusted for that quality.")
+    claims = s["unsupported_claims"]
+    lines.append(f"- Unsupported statements the judge listed in normal plans: {claims['listed']} "
+                 f"({claims['found_in_plan']} found word for word in the plan; check each one yourself)")
+    if s["averages"]:
+        lines += ["", "| Quality | Average (1-5) | Cases |", "|---|---|---|"]
+        lines += [f"| {k.replace('_', ' ')} | {v['mean']} | {v['cases']} |" for k, v in s["averages"].items()]
+    for r in j["cases"]:
+        lines += ["", f"### {r['id']} ({r['status'].replace('_', ' ')}): {r['description']}", ""]
+        if r.get("reason"):
+            lines.append(f"- {r['reason']}")
+        lines += [f"- {k.replace('_', ' ')}: **{v['score']}** {v['reason']}" for k, v in r["scores"].items()]
+        for c in r["unsupported_claims"]:
+            where = "" if c["found_in_plan"] else " (these words are not in the plan)"
+            lines.append(f"- Listed as unsupported: “{c['claim']}”{where}")
+        if r.get("check"):
+            word = {True: "Noticed", False: "MISSED", None: "Not checked"}[r["check"]["noticed"]]
+            lines.append(f"- Planted problem: {word}: {r['check']['why']}")
+    return lines
 
 
 def markdown(data: dict) -> str:
@@ -112,7 +197,14 @@ def markdown(data: dict) -> str:
     if t["cases"]:
         lines.append(f"- Time per case: median {t['median_s']} s, p90 {t['p90_s']} s, slowest {t['max_s']} s "
                      "(offline; says nothing about live speed).")
-    lines += [f"- Tokens: {data['tokens']['note']}.", f"- Cost: {data['estimated_cost']['note']}."]
+    money = data["estimated_cost"]
+    lines += [f"- Tokens: {data['tokens']['note']}.",
+              "- Cost: " + (f"{money['value']} {money['currency']}; " if money.get("value") is not None else "")
+              + money["note"].rstrip(".") + "."]
+    for part in (data.get("performance") or {}).values():
+        lines += performance_lines(part)
+    if data.get("judge"):
+        lines += judge_lines(data["judge"])
     if data.get("agents_not_built"):
         lines += ["", "## Not built yet", "", "No evaluator or cases yet (not counted above): "
                   + ", ".join(data["agents_not_built"]) + "."]

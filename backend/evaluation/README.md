@@ -1,17 +1,50 @@
-# Evaluation framework (stages 1 to 3)
+# Evaluation framework
+
+It answers four questions: is the planner right, can the checks be trusted, what does a reader think of the
+plans, and what does it cost in time and money. All test data is **synthetic**.
+
+**Contents:** [Running it](#running-it) · [Reading the report](#reading-the-report) ·
+[What is checked and why](#what-is-checked) · [AI judge](#ai-judge) · [Speed and cost](#speed-and-cost) ·
+[What needs a key](#what-needs-a-key-and-what-is-pretend) · [Adding a case](#adding-a-case) ·
+[LangSmith](#langsmith)
+
+## Running it
 
 From the `backend` folder:
 
-```
-python -m evaluation.run_evaluation                      # everything that is built
-python -m evaluation.run_evaluation --agent budget       # one part; --help lists the names
-python -m evaluation.run_evaluation --deterministic-only
-```
+| Command | What it does | AI key |
+|---|---|---|
+| `python -m evaluation.run_evaluation` | every fixed check, plus offline speed figures | no |
+| `... --agent budget` | one part (`--help` lists the names) | no |
+| `... --deterministic-only` | the fixed checks; the judge can never start | no |
+| `... --records [--period today\|7d\|30d\|all]` | adds speed figures from your own recorded use | no |
+| `... --prices prices.json` | works out AI cost from your prices | no |
+| `... --judge-list` | shows what the judge would do; calls nothing | no |
+| `... --judge [--judge-limit N]` | also asks the AI judge | **yes** |
+| `... --agent llm_judge --judge` | the judge only | **yes** |
+| `python -m pytest app/tests/test_evaluation` | tests of the evaluators themselves | no |
 
-Reports go to `.runtime/evaluation/` (`report.md` and `report.json`). The command ends with code 1 when a case
-failed. It runs offline with a fixed date, calls no real AI and needs no key. All test data is **synthetic**.
+Reports go to `.runtime/evaluation/` (`report.md` for reading, `report.json` for programs) and are replaced on every
+run. Each judge run is also kept in `.runtime/evaluation/judge/`. Exit codes: **0** nothing failed, **1** a case
+failed or broke (with the known failures below this is expected), **2** it could not start. With
+`--agent llm_judge` it is 1 only when nothing could be scored. `--out` changes the folder.
 
 The older evaluations (`evals/` and the dashboard's Evaluations tab) are unchanged.
+
+## Reading the report
+
+1. **Summary.** Look at the two rows separately. If a *self-check* fails, an evaluator is broken: fix that before
+   trusting any planner result.
+2. **By agent / by category** show where failures are.
+3. **Measures** are averages such as the share of activities that match the interests. A share with few cases says
+   little.
+4. **Failed cases** give a code and the reason. Compare with *Known failures* below: a new id is a change in
+   behaviour.
+5. **Not supported** is a list of missing features, not of passes. **Warnings** are worth reading but never fail.
+6. **Time, tokens and cost** and the **AI judge** come last. Neither changes any pass rate.
+
+A high pass rate means the plans agree with the rules in these cases. It does not mean prices, weather or opening
+times are true.
 
 ## Two scores that are never mixed
 
@@ -22,6 +55,32 @@ The older evaluations (`evals/` and the dashboard's Evaluations tab) are unchang
 counted as passed. Pass rate = passed / (passed + failed + errors).
 
 ## What is checked
+
+### Why each part matters
+
+| Part or measure | Why it matters |
+|---|---|
+| supervisor | a wrong route wastes calls or plans without the facts it needs |
+| destination | a poor suggestion sends the traveller to the wrong place |
+| transport, accommodation | usually most of the money; a wrong date, room count or price spoils the budget |
+| weather | an outdoor day in heavy rain is a lost day |
+| activity | this is what the traveller travels for |
+| budget | a wrong total can leave someone short of money on the trip |
+| itinerary | clashes and missing days make a plan impossible to follow |
+| group | one person's wishes can silently disappear |
+| end_to_end | correct parts can still be joined wrongly |
+| grounding | made-up details look exactly like real ones |
+| replanning | a small change must not undo choices the traveller was happy with |
+| pass rate | whether behaviour got better or worse, on these cases only |
+| share matching interests / in season | how well plans fit, beyond pass or fail |
+| time per agent and per plan | shows where waiting comes from |
+| tool, lookup and workflow failure rates | how often the traveller gets a thinner plan or none |
+| retries | hidden waiting and extra calls on a free allowance |
+| cache hit rate | how many calls were saved |
+| tokens and cost | whether free limits will last, and what paid use would cost |
+
+### Pass rules
+
 
 Each part has an evaluator in `evaluators/` and cases in `datasets/`. A case **fails** when any hard check fails; the
 report gives the reason. It is **not supported** when nothing fails but it asks for something the application
@@ -131,4 +190,96 @@ case. Work out budget figures by hand, and write money as text (`"1500.50"`). Ch
 exact wording. `test_framework_agents.py` and `test_framework_stage3.py` in `app/tests/test_evaluation/` list the
 expected failures and unsupported cases; update them when they change.
 
-Not built yet: the AI judge, and speed and cost figures per agent.
+A judge case goes in `datasets/judge_cases.json`: `target` is `judge` or `judge_check`, `input.request` (and
+`group`), `expected_constraints` (what the judge is told was wanted) and `expected.dimensions`. A `judge_check` also
+has `input.plant` (`add_to_summary`, `rename_activities` or `scramble_summary`) and `expected.must_list`, or
+`expected.compare_with` with `expected.lower_on`. Each judge case costs one AI call per run.
+
+## AI judge
+
+The judge (`judge.py`, cases in `datasets/judge_cases.json`) gives opinions on what rules cannot measure. It is
+**not** the source of truth: its scores never pass or fail anything and are never added to a pass rate. It is told
+not to check sums, dates, times, data format, prices or availability.
+
+It is sent the request, the expected constraints, the written plan (without the mock booking), the planner's notes,
+the group report and a shortened copy of the source records. The plans are built offline by the app's rules and
+templates, so no AI wrote the text being judged. Only these made-up requests are sent to the provider.
+
+**Rubric.** Each quality is scored 1 to 5. Every score has its own description (`RUBRIC` in `judge.py`), and the
+judge must give a reason for each.
+
+| Quality | Question | 1 means | 5 means |
+|---|---|---|---|
+| destination relevance | Does the plan suit the destination and what the traveller asked of it? | The plan is about the wrong place, or ignores what was asked of the destination. | It clearly fits this destination and every stated wish. |
+| explanation quality | Does the plan explain its choices and say what is uncertain, estimated or missing? | No explanation; limits or estimates are hidden or misleading. | Choices, trade-offs, estimates and gaps are all clearly explained. |
+| activity relevance | Do the activities match the traveller's interests and the kind of trip? | The activities have nothing to do with the interests or the place. | Nearly all match the interests and suit this trip. |
+| itinerary coherence | Do the days make sense as a trip: grouping, variety and flow? (Not exact times or sums.) | The days are jumbled and could not be followed. | Every day hangs together, with a natural flow and good variety. |
+| group balance | Does each person in the group get a fair share of what they like, and is any compromise stated? | One or more people are ignored entirely and nothing says so. | A fair share for everyone, with compromises clearly explained. |
+| clarity usefulness | Could a traveller read this and act on it? | Unreadable or of no practical use. | Very clear, well organised and ready to act on. |
+
+Group balance is asked about group trips only. The judge also lists statements the source records do not support.
+Each is marked if its words are not found in the plan, because a judge can make things up too. Check them yourself.
+
+**Testing the judge.** Three cases plant a problem: an invented hotel feature (it should be listed), unrelated
+activities (their relevance should score lower than in the normal plan) and a plan with its words shuffled (clarity
+should score lower). The report says how many were noticed. One run is a small sample: the same model can score
+differently another time.
+
+**Its own model.** In `.env`, `JUDGE_PROVIDER` (`groq`, `gemini` or `ollama`), `JUDGE_MODEL` and `JUDGE_API_KEY`
+give the judge a separate model. All three are optional; without them it uses the first provider that has a key.
+`JUDGE_MODEL` needs `JUDGE_PROVIDER`.
+
+**Limits.** One call per case (9 now), plus retries, never more than 100 a run, or `--judge-limit`. The saved-answer
+cache is off, calls count toward the app's daily limit, it pauses between calls and waits a minute after "too many
+requests". After three unanswered cases in a row the rest are marked *not run*. A reply that does not fit the
+rubric is *invalid* and is never scored.
+
+## Speed and cost
+
+Two sources, shown separately. The sums are the dashboard's (`app/observability/analytics.py`).
+
+- **Offline** (in every full run): the whole-trip test requests without made-up outages, three times each, recorded
+  in memory. It measures the app's own steps on that computer. No AI or outside service is called, so it says
+  **nothing about live speed**.
+- **Your records** (`--records`): what the app recorded while you used it, with real AI calls and data lookups.
+  Records are only read. Only counts, times, source and model names are used, never typed text.
+
+Both give time per agent and per request, tool calls, failures and retries, workflow failure rate, automatic
+re-plans, AI calls, tokens in and out (marked when estimated), AI and lookup cache hit rates, and time and failures
+per data source. "Median" is the middle value; "p90" is the time that 9 in 10 stayed within. A rate with nothing to
+count is **not measured**. Percentiles from a few requests move a lot.
+
+**Cost** is worked out only from prices you give: no price is built in. Create a JSON file with your provider's
+current prices per million tokens, replacing the words in angle brackets with numbers:
+
+```
+{"currency": "USD",
+ "models": {"<model name as shown in the report>": {"input_per_million": <price>, "output_per_million": <price>}}}
+```
+
+Pass it with `--prices`, or set `EVAL_PRICES` in `.env`. It is used for the judge's calls and, with `--records`,
+for recorded calls. A model without a price makes the total **partial**. Voice is not included. It is an estimate
+from token counts, not a bill; a free plan may charge nothing.
+
+## What needs a key, and what is pretend
+
+| Part | Needs an AI key | What stands in |
+|---|---|---|
+| every fixed check | no | the app's offline price estimator, built-in place and weather data |
+| live price grounding cases | no | saved real Google pages in `app/tests/fixtures/`; a made-up exchange rate |
+| AI invention cases | no | a scripted **pretend AI** |
+| failures and outages | no | tools told to fail |
+| change requests, whole trips | no | the built-in runner (not LangGraph) |
+| all pytest tests, the judge's too | no | a **pretend judge**, including broken replies and service errors |
+| offline speed figures | no | nothing is called |
+| your records | no | your own earlier use (that use needed keys if it called an AI) |
+| `--judge` | **yes** | nothing: a real model is called |
+
+Passing pytest shows that the judge code handles replies correctly. It says nothing about how well a real model
+judges; only the planted problems in a real run give a hint of that. The older live AI tests
+(`evals/run_live_evals.py`) also need a key.
+
+## LangSmith
+
+LangSmith is **not included**, by choice: it would send run data to an outside service. There is nothing to
+configure and no setting turns it on. Local records, the dashboard and these reports cover tracing and evaluation.

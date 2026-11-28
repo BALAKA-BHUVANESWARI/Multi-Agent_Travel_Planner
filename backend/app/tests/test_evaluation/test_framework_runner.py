@@ -46,7 +46,7 @@ def test_the_command_writes_both_reports(tmp_path, capsys):
     assert data["agents"] == ["budget"] and data["summary"]["all"]["not_supported"] == 2
     assert data["summary"]["all"]["total"] == len(data["cases"]) and data["timestamp"]
     assert data["latency"]["cases"] == len(data["cases"]) and data["tokens"]["llm_calls"] == 0
-    for part in ("## By agent", "## By category", "## Failed cases", "## Not supported", "## Not built yet"):
+    for part in ("## By agent", "## By category", "## Failed cases", "## Not supported", "## AI judge"):
         assert part in text
 
 

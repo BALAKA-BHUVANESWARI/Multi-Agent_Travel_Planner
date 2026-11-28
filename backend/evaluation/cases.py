@@ -14,7 +14,7 @@ class DatasetError(ValueError):
     pass
 
 
-def load(path: Path) -> list[dict]:
+def load(path: Path, targets: tuple = TARGETS) -> list[dict]:
     """Read one dataset. Decimal numbers stay exact (they are never turned into floating point)."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
@@ -27,7 +27,7 @@ def load(path: Path) -> list[dict]:
         missing = [k for k in REQUIRED if k not in case]
         if missing:
             raise DatasetError(f"{path.name}: case {case.get('id', number)} has no {', '.join(missing)}")
-        if case["target"] not in TARGETS:
+        if case["target"] not in targets:
             raise DatasetError(f"{path.name}: case {case['id']} has an unknown target")
         if case["id"] in seen:
             raise DatasetError(f"{path.name}: the id {case['id']} is used twice")

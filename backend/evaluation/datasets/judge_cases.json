@@ -1,0 +1,325 @@
+{
+ "synthetic": true,
+ "label": "SYNTHETIC test data: made-up requests and planted problems",
+ "cases": [
+  {
+   "id": "judge-goa-beaches",
+   "description": "A beach trip within India",
+   "category": "domestic",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 4 day trip from Delhi to Goa in December, budget 60000 for 2 people, we like beaches"
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 60000,
+    "interests": [
+     "beaches"
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ]
+   }
+  },
+  {
+   "id": "judge-paris-art",
+   "description": "An art and history trip abroad",
+   "category": "international",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 6 day trip from Mumbai to Paris in May, budget 400000 for 2 people, history and art"
+   },
+   "expected_constraints": {
+    "destination": "Paris",
+    "days": 6,
+    "travellers": 2,
+    "budget_inr": 400000,
+    "interests": [
+     "history",
+     "art"
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ]
+   }
+  },
+  {
+   "id": "judge-goa-group",
+   "description": "A group whose wishes clash",
+   "category": "group",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 5 day trip from Delhi to Goa in December, budget 150000",
+    "group": [
+     {
+      "name": "Asha",
+      "likes": [
+       "beach"
+      ],
+      "avoid": [
+       "history"
+      ]
+     },
+     {
+      "name": "Ravi",
+      "likes": [
+       "history"
+      ],
+      "avoid": [
+       "beach"
+      ]
+     },
+     {
+      "name": "Meena",
+      "likes": [
+       "food"
+      ],
+      "avoid": []
+     }
+    ]
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 5,
+    "budget_inr": 150000,
+    "group_wishes": [
+     {
+      "name": "Asha",
+      "likes": [
+       "beach"
+      ],
+      "avoid": [
+       "history"
+      ]
+     },
+     {
+      "name": "Ravi",
+      "likes": [
+       "history"
+      ],
+      "avoid": [
+       "beach"
+      ]
+     },
+     {
+      "name": "Meena",
+      "likes": [
+       "food"
+      ],
+      "avoid": []
+     }
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness",
+     "group_balance"
+    ]
+   }
+  },
+  {
+   "id": "judge-jaipur-relaxed",
+   "description": "A slow history trip by train",
+   "category": "preferences",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 4 day relaxed trip from Delhi to Jaipur in January by train, budget 50000 for 2 people, history and food"
+   },
+   "expected_constraints": {
+    "destination": "Jaipur",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 50000,
+    "interests": [
+     "history",
+     "food"
+    ],
+    "pace": "relaxed",
+    "travel": "train"
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ]
+   }
+  },
+  {
+   "id": "judge-kochi-rain",
+   "description": "A culture trip in the rainy season",
+   "category": "weather",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 5 day trip from Chennai to Kochi in June, budget 70000, culture"
+   },
+   "expected_constraints": {
+    "destination": "Kochi",
+    "days": 5,
+    "budget_inr": 70000,
+    "interests": [
+     "culture"
+    ],
+    "season": "monsoon"
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ]
+   }
+  },
+  {
+   "id": "judge-goa-monsoon",
+   "description": "A beach wish in a week of rain",
+   "category": "weather",
+   "target": "judge",
+   "input": {
+    "request": "Plan a 4 day trip from Delhi to Goa in July, budget 60000 for 2 people, we like beaches"
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 60000,
+    "interests": [
+     "beaches"
+    ],
+    "season": "monsoon"
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ]
+   }
+  },
+  {
+   "id": "judge-check-invented",
+   "description": "The judge should list an invented hotel feature",
+   "category": "planted_claim",
+   "target": "judge_check",
+   "input": {
+    "request": "Plan a 4 day trip from Delhi to Goa in December, budget 60000 for 2 people, we like beaches",
+    "plant": {
+     "add_to_summary": "Your hotel has a rooftop infinity pool."
+    }
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 60000,
+    "interests": [
+     "beaches"
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ],
+    "must_list": "rooftop infinity pool"
+   }
+  },
+  {
+   "id": "judge-check-activities",
+   "description": "The judge should score unrelated activities lower",
+   "category": "planted_activities",
+   "target": "judge_check",
+   "input": {
+    "request": "Plan a 4 day trip from Delhi to Goa in December, budget 60000 for 2 people, we like beaches",
+    "plant": {
+     "rename_activities": [
+      "Visit to a tax office",
+      "Queue at a bank",
+      "Car park walk",
+      "Waiting at a bus depot",
+      "Office supply shopping"
+     ]
+    }
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 60000,
+    "interests": [
+     "beaches"
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ],
+    "compare_with": "judge-goa-beaches",
+    "lower_on": "activity_relevance"
+   }
+  },
+  {
+   "id": "judge-check-scrambled",
+   "description": "The judge should score a scrambled plan as less clear",
+   "category": "planted_unclear",
+   "target": "judge_check",
+   "input": {
+    "request": "Plan a 4 day trip from Delhi to Goa in December, budget 60000 for 2 people, we like beaches",
+    "plant": {
+     "scramble_summary": true
+    }
+   },
+   "expected_constraints": {
+    "destination": "Goa",
+    "days": 4,
+    "travellers": 2,
+    "budget_inr": 60000,
+    "interests": [
+     "beaches"
+    ]
+   },
+   "expected": {
+    "dimensions": [
+     "destination_relevance",
+     "explanation_quality",
+     "activity_relevance",
+     "itinerary_coherence",
+     "clarity_usefulness"
+    ],
+    "compare_with": "judge-goa-beaches",
+    "lower_on": "clarity_usefulness"
+   }
+  }
+ ]
+}
