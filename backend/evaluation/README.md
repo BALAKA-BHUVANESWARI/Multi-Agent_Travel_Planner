@@ -170,6 +170,9 @@ tell the traveller. Also: a link and retrieval time on travel, hotel, weather an
 time but no link); swapping outdoor for indoor activities, replacing the interests or adding a named group member
 after planning; and trip versions (the earlier plan is overwritten).
 
+`grd-ai-origin` checks that an AI cannot supply a missing starting city. There is no such guard or case for a missing
+destination, except when the traveller asks for ideas (`grd-ai-destination`).
+
 The five `grd-ai-…` cases that used to fail here pass since `app/services/ai_guard.py`: an AI summary or chat
 answer with an unsupported amount, date, place or listed feature is not shown, and an AI budget or trip length counts
 only when the traveller's words state it. They test these particular inventions; they do not show that nothing made

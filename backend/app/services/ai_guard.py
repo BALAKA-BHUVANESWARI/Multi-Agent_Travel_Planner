@@ -3,7 +3,7 @@ the traveller sees, and it works with recording switched off.
 
 * An AI summary or chat answer is not shown when it states money, a date, a place name or a hotel or place feature
   that the plan does not hold. If the check itself breaks, the text is not shown either.
-* A budget or trip length read by an AI is used only when the traveller's own words state it.
+* A starting city, budget or trip length read by an AI is used only when the traveller's own words state it.
 
 This is not proof: only the listed kinds are looked for (see ``fact_checks``), and a true statement can be held back.
 Day and night counts are recorded but do not hold a text back ("spend 2 days on the beach" is a fair thing to say).
@@ -99,6 +99,23 @@ def _spell_out(text: str) -> str:
         scale = 1_000 if unit in ("thousand", "grand") else 10_000_000 if unit.startswith("cr") else 100_000
         return str(round(n * scale))
     return _WORDED_MONEY.sub(number, text)
+
+
+def typed_origin(value: str, text: str, destination: str = "") -> bool:
+    """Whether the traveller's own words name this starting city: as written, by another known name of the same
+    city, or one letter off. The words that name the destination do not also name the start."""
+    try:
+        rest = f" {facts._norm(text)} "
+        if destination:                                       # "a trip to Goa" does not say "from Goa"
+            end = facts._norm(destination)
+            for name in sorted(facts._known_places().get(end, {end}), key=len, reverse=True):
+                if name and f" {name} " in rest:
+                    rest = rest.replace(f" {name} ", " | ", 1)
+                    break
+        names = dict.fromkeys((str(value), str(value).split(",")[0]))        # "Delhi, India" is typed as "Delhi"
+        return any(facts._supported_place(name, rest) for name in names)
+    except Exception:                                        # noqa: BLE001
+        return False
 
 
 def typed_value(field: str, value, text: str) -> bool:

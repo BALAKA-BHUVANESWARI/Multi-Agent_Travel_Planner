@@ -1,6 +1,9 @@
 """What an AI returns is used only when the plan or the traveller's own words support it."""
+import json
+
 import pytest
 
+from app.agents import intake_agent
 from app.services import ai_guard, fact_checks
 from app.services.export_service import render_summary
 from app.services.trip_service import PlannerService
@@ -72,6 +75,41 @@ def test_only_a_stated_trip_length_counts(words, days):
 ])
 def test_only_a_stated_budget_counts(words, value, ok):
     assert ai_guard.typed_value("budget", value, words) is ok
+
+
+@pytest.mark.parametrize("words, city, destination, ok", [
+    ("Delhi se Goa, 4 days", "Delhi", "goa", True), ("we live in Bombay, Goa please", "Mumbai", "goa", True),
+    ("starting at dehli", "Delhi", "goa", True), ("from Delhi to Goa", "Delhi, India", "goa", True),
+    ("flying out of Zzqxv to Goa", "Zzqxv", "goa", True), ("a trip to Goa", "Delhi", "goa", False),
+    ("a trip to Goa", "Goa", "goa", False), ("a trip to Bombay", "Mumbai", "mumbai", False),
+    ("from home to Goa", "Pune", "goa", False), ("a trip from Zzqxv to Goa", "Delhi", "goa", False),
+])
+def test_only_a_named_starting_city_counts(words, city, destination, ok):
+    assert ai_guard.typed_origin(city, words, destination) is ok
+
+
+def ai_reads(values):
+    def reply(url, headers, body, timeout):
+        body = body if isinstance(body, dict) else json.loads(body)
+        wanted = body["messages"][0]["content"].startswith("Extract trip")
+        return 200, {"choices": [{"message": {"content": json.dumps(values if wanted else {})}}]}
+    return reply
+
+
+def test_an_unnamed_starting_city_is_asked_for(make):
+    svc = ai_service(make, transport=ai_reads({"origin": "Delhi"}), records=False)
+    state = svc.plan("Plan a 4 day trip to Goa, budget 60000")
+    assert state["status"] == "needs_info" and state["constraints"]["origin"] is None
+    assert "starting" in state["message"].lower() or "from" in state["message"].lower()
+
+
+def test_the_saved_home_city_is_used_instead_of_an_invented_one(make):
+    parsed = {"constraints": {"origin": None, "destination": None, "days": 4, "budget": 60000, "preferences": []},
+              "texts": {"destination": "goa"}, "missing": ["origin"], "invalid": {}, "assumptions": []}
+    planner = make(env={"GROQ_API_KEY": "k" * 20}, transport=ai_reads({"origin": "Delhi"}))
+    intake_agent._llm_fill_gaps(parsed, "Plan a 4 day trip to Goa, budget 60000", planner.deps)
+    intake_agent._apply_memory(parsed, {"home_city": "Pune"}, "Plan a 4 day trip to Goa, budget 60000", [])
+    assert parsed["texts"]["origin"] == "Pune"
 
 
 def test_it_works_with_recording_switched_off(make):

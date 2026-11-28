@@ -123,11 +123,19 @@ def test_intake_llm_fills_only_the_gaps(make, fake_transport):
     t = fake_transport({GROQ: lambda b: (200, {"origin": "delhi", "budget_inr": 60000, "destination": "jaipur",
                                                "days": 9})})
     p = make(env=KEYS, transport=t)
-    s = p.start("Plan a trip to Goa for 5 days from the capital, around sixty thousand rupees")
+    s = p.start("Plan a trip to Goa for 5 days, Delhi wale hain, around sixty thousand rupees")
     c = s["constraints"]
     assert (c["origin"], c["destination"], c["days"], c["budget"]) == ("delhi", "goa", 5, 60000)
     assert s["status"] == "awaiting_approval"
     assert any("LLM filled" in l["msg"] for l in s["log"])
+
+
+def test_a_city_the_traveller_only_hints_at_is_asked_for(make, fake_transport):
+    t = fake_transport({GROQ: lambda b: (200, {"origin": "delhi", "budget_inr": 60000})})
+    s = make(env=KEYS, transport=t).start(
+        "Plan a trip to Goa for 5 days from the capital, around sixty thousand rupees")
+    assert s["status"] == "needs_info" and s["constraints"]["origin"] is None
+    assert s["constraints"]["budget"] == 60000
 
 
 def test_intake_without_llm_asks_instead(make):

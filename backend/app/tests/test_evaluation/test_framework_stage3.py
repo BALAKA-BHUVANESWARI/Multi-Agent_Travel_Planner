@@ -103,6 +103,12 @@ def test_taking_the_ai_value_again_is_caught(monkeypatch, case_id):
     assert "ai_filled_missing_value" in codes(run_one("grounding", case_id))
 
 
+def test_taking_the_ai_starting_city_again_is_caught(monkeypatch):
+    assert run_one("grounding", "grd-ai-origin")["status"] == "passed"
+    monkeypatch.setattr(ai_guard, "typed_origin", lambda *args: True)
+    assert "ai_filled_missing_value" in codes(run_one("grounding", "grd-ai-origin"))
+
+
 @pytest.mark.parametrize("case_id", ["grd-ai-amount-words", "grd-ai-place", "grd-ai-chat"])
 def test_showing_unchecked_ai_text_again_is_caught(monkeypatch, case_id):
     assert run_one("grounding", case_id)["status"] == "passed"

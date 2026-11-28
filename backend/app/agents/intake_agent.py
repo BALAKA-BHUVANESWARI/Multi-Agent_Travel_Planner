@@ -51,6 +51,7 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
     c, filled = parsed["constraints"], []
     texts = parsed.setdefault("texts", {})
     alts = parsed.setdefault("alts", {})
+    refused = {}                # a starting city, trip length or budget the traveller's words do not state
     for role in ("origin", "destination"):
         v = obj.get(role)
         if role == "destination" and isinstance(v, str) and _WANTS_IDEAS.search(text) \
@@ -58,6 +59,11 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
             observe.event("guardrail", "ai_invented_destination", "rejected", detail=v)
             continue                        # asked for ideas and never named it: offer suggestions instead
         if c[role] is None and isinstance(v, str) and _PLACE_TEXT.match(v.strip()):
+            if role == "origin" and not ai_guard.typed_origin(
+                    v.strip(), text, texts.get("destination") or c["destination"] or ""):
+                refused[role] = v.strip()
+                observe.event("guardrail", "ai_filled_value", "rejected", field=role)
+                continue
             if role not in texts:
                 texts[role] = v.strip()
             elif v.strip().lower() != texts[role].lower():
@@ -65,7 +71,6 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
             else:
                 continue
             filled.append(role)
-    refused = {}                            # a trip length or budget the traveller's words do not state
     for field, key in (("days", "days"), ("budget", "budget_inr")):
         if c[field] is None and isinstance(obj.get(key), int):
             if ai_guard.typed_value(field, obj[key], text):
