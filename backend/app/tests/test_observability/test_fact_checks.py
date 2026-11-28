@@ -144,9 +144,9 @@ def test_ai_text_is_checked_and_flags_are_counted(make):
     assert {"amounts", "day_counts", "places"} <= set(summary["attrs"]["kinds"])
     assert "Hawa Mahal" not in booked["summary"]
     chat = checks(svc, "chat")[0]
-    assert chat["status"] == "flagged" and chat["attrs"] == {"shown": True, "flags": 1, "kinds": {"dates": 1},
+    assert chat["status"] == "flagged" and chat["attrs"] == {"shown": False, "flags": 1, "kinds": {"dates": 1},
                                                             "looked_at": {"dates": 1}}
-    assert asked["reply"] == "Yes, on 25 December."                                  # shown unchanged
+    assert "25 December" not in asked["reply"] and asked["source"] == "rules"         # held back
     ranking = checks(svc, "ranking")[0]
     assert ranking["status"] == "flagged" and ranking["attrs"]["kinds"] == {"unknown_ids": 1}
     stored = json.dumps([svc.recorder.store.spans(), svc.recorder.store.details()])
@@ -185,12 +185,13 @@ def test_a_broken_check_never_breaks_a_plan(make, monkeypatch):
         monkeypatch.setattr(fact_checks, name, broken)
     svc = ai_service(make)
     booked, asked = full_trip(svc)
-    assert booked["status"] == "booked" and asked["reply"] == "Yes, on 25 December."
+    assert booked["status"] == "booked"
+    assert asked["source"] == "rules" and "25 December" not in asked["reply"]   # not checked, so not shown
     assert checks(svc, "summary")[0]["status"] == "error"
 
 
 def test_nothing_is_checked_when_nothing_is_recorded(make, monkeypatch):
-    monkeypatch.setattr(fact_checks, "check_places", lambda *a: pytest.fail("should not run"))
+    monkeypatch.setattr(fact_checks, "_record", lambda *a, **k: pytest.fail("should not run"))
     booked, _ = full_trip(ai_service(make, records=False))
     assert booked["status"] == "booked"
 

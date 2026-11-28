@@ -4,11 +4,11 @@ import copy
 
 import pytest
 
-from app.agents import intake_agent, itinerary_agent
+from app.agents import itinerary_agent
 from app.graph import nodes
 from app.graph import runner as runner_module
 from app.integrations import live_prices
-from app.services import chat_service
+from app.services import ai_guard
 from evaluation import cases as datasets
 from evaluation import harness
 from evaluation import run_evaluation as runner
@@ -16,7 +16,6 @@ from evaluation import run_evaluation as runner
 NEW = ("grounding", "replanning")
 # problems each one reproduced by hand against the application; a fix removes its line here
 KNOWN_FAILURES = [
-    "grd-ai-amount-words", "grd-ai-budget", "grd-ai-chat", "grd-ai-days", "grd-ai-place",
     "rp-cheaper-flight-agents", "rp-cheaper-flight-result", "rp-cheaper-hotel-agents", "rp-cheaper-hotel-result",
     "rp-flight-to-train-result", "rp-more-history-agents", "rp-no-adventure-agents", "rp-one-more-person-agents",
     "rp-to-train-agents"]
@@ -93,26 +92,22 @@ def broken(monkeypatch, node, change):
 def test_a_dropped_price_guard_is_caught(monkeypatch):
     assert run_one("grounding", "grd-ai-amount")["status"] == "passed"
     monkeypatch.setattr(itinerary_agent, "numbers_are_grounded", lambda text, allowed: True)
+    monkeypatch.setattr(ai_guard, "unsupported", lambda *args, **kwargs: [])        # the second guard
     assert "ai_invented_shown" in codes(run_one("grounding", "grd-ai-amount"))
 
 
-def test_the_ai_gap_case_passes_when_nothing_is_filled(monkeypatch):
-    """So the failure really is the AI's value, not something in the case itself."""
-    monkeypatch.setattr(intake_agent, "_llm_fill_gaps",
-                        lambda parsed, text, deps: deps.llm.complete_json(
-                            "intake", "Extract trip details.", text, {"type": "object"}) and [])
-    assert run_one("grounding", "grd-ai-budget")["status"] == "passed"
+@pytest.mark.parametrize("case_id", ["grd-ai-budget", "grd-ai-days"])
+def test_taking_the_ai_value_again_is_caught(monkeypatch, case_id):
+    assert run_one("grounding", case_id)["status"] == "passed"
+    monkeypatch.setattr(ai_guard, "typed_value", lambda *args: True)
+    assert "ai_filled_missing_value" in codes(run_one("grounding", case_id))
 
 
-def test_the_chat_case_passes_when_the_answer_is_not_used(monkeypatch):
-    original = chat_service.ai_answer
-
-    def silent(state, text, llm):
-        original(state, text, llm)
-        return None
-
-    monkeypatch.setattr(chat_service, "ai_answer", silent)
-    assert run_one("grounding", "grd-ai-chat")["status"] == "passed"
+@pytest.mark.parametrize("case_id", ["grd-ai-amount-words", "grd-ai-place", "grd-ai-chat"])
+def test_showing_unchecked_ai_text_again_is_caught(monkeypatch, case_id):
+    assert run_one("grounding", case_id)["status"] == "passed"
+    monkeypatch.setattr(ai_guard, "unsupported", lambda *args, **kwargs: [])
+    assert "ai_invented_shown" in codes(run_one("grounding", case_id))
 
 
 def test_a_provider_name_that_gets_lost_is_caught(monkeypatch):

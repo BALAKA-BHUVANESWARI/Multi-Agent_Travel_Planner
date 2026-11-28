@@ -93,7 +93,7 @@ def test_fact_check_numbers_name_the_model(make, switched_on):
     jobs = {j["job"]: j for j in found["jobs"]}
     assert list(jobs) == ["summary", "chat", "request_reading", "ranking"]
     assert (jobs["chat"]["checked"], jobs["chat"]["flagged"], jobs["chat"]["unmarked"]) == (1, 1, 1)
-    assert jobs["summary"]["flagged_and_shown"] == 0 and jobs["chat"]["flagged_and_shown"] == 1
+    assert jobs["summary"]["flagged_and_shown"] == 0 and jobs["chat"]["flagged_and_shown"] == 0   # both held back
     assert jobs["request_reading"]["checked"] == 0 and jobs["request_reading"]["flagged_share"] is None
     assert found["checked"] == sum(j["checked"] for j in found["jobs"]) and found["errors"] == 0
     assert found["flagged"] == sum(j["flagged"] for j in found["jobs"]) == found["items_total"]
@@ -204,6 +204,10 @@ def test_a_value_the_ai_filled_in_is_checked_against_the_typed_request(make):
         return 200, {"choices": [{"message": {"content": json.dumps(content)}}]}
     svc = ai_service(make, transport=reply)
     state = svc.plan("a trip to Goa from Delhi for a long weekend")
-    assert state["constraints"]["budget"] == 777000                # flagged, not changed
+    assert state["constraints"]["budget"] is None and state["status"] == "needs_info"   # not typed: ask
+    assert state["constraints"]["days"] == 3                       # "weekend" states it
     checked, = [s for s in svc.recorder.store.spans() if s["name"] == "request_reading"]
     assert checked["status"] == "flagged" and checked["attrs"]["kinds"] == {"budget": 1}
+    assert checked["attrs"]["shown"] is False
+    held, = [s for s in svc.recorder.store.spans() if s["name"] == "ai_filled_value"]
+    assert held["status"] == "rejected" and held["attrs"] == {"field": "budget"}

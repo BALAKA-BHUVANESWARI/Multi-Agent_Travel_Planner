@@ -1,6 +1,7 @@
-"""Automatic checks for made-up facts in what an AI model returned. They only record and flag.
+"""Automatic checks for made-up facts in what an AI model returned.
 
-Nothing here changes what the traveller sees, and nothing here is proof: a flag means "this was not found in the
+The ``record_*`` functions only record and flag; they change nothing. Whether an AI text is shown at all is decided
+by ``ai_guard``, which uses some of these checks. Nothing here is proof: a flag means "this was not found in the
 plan (or in the typed request)", which can be a false alarm. The dashboard lets the owner mark each one.
 
 What is compared:
@@ -9,7 +10,8 @@ What is compared:
 * the AI's ranking of activities: ids that were not on the list it was given.
 
 Limits: money written without ₹, Rs, INR or "rupees" is not checked; a made-up one-word name is only caught when it
-is a known town or city; weekday names, times and distances are not checked.
+is a known town or city; only the listed kinds of hotel or place feature are looked for; weekday names, clock times
+and distances are not checked.
 
 Every public ``record_*`` function does nothing outside a recorded request and never raises: recording must not
 break or change a plan. The text and the flagged examples are kept only with RECORD_DETAILS=1.
@@ -29,7 +31,7 @@ from app.services.geo_service import _one_slip
 
 MAX_FLAGS = 20                       # examples kept for one check
 MAX_SENTENCE = 200
-KINDS = ("amounts", "dates", "day_counts", "places", "days", "budget", "preferences", "unknown_ids")
+KINDS = ("amounts", "dates", "day_counts", "places", "features", "days", "budget", "preferences", "unknown_ids")
 
 _MONTHS = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10,
            "nov": 11, "dec": 12}
@@ -59,7 +61,7 @@ day days night nights trip plan tour visit enjoy explore start head spend take t
 first last final morning afternoon evening today tomorrow arrive arrival depart departure return back total budget cost
 price estimated about around roughly nothing note yes no if so as with by each per also please remember with
 monday tuesday wednesday thursday friday saturday sunday january february march april may june july august september
-october november december google maps flights hotels mock openstreetmap wikivoyage wikipedia open meteo
+october november december happy safe bon voyage travels journeys google maps flights hotels mock openstreetmap wikivoyage wikipedia open meteo
 source sources""".split())
 
 
@@ -265,6 +267,52 @@ def check_places(text: str, leaves: list[str], also_allowed: str = "") -> tuple[
     return flags, looked
 
 
+# Things about a hotel or a place that the plan usually does not record. An AI may only mention one when the plan's
+# own text does, or when it says that the plan does not say.
+_FEATURES = tuple(re.compile(rf"\b(?:{p})\b", re.I) for p in (
+    r"(?:swimming |infinity |plunge )?pools?", r"gym|fitness (?:centre|center|room)", r"wi-?fi|free internet",
+    r"(?:free|complimentary) breakfast|breakfast (?:is )?(?:included|free|complimentary)|includes breakfast",
+    r"(?:free|private|valet) parking|parking (?:is )?(?:free|available|included)",
+    r"airport (?:shuttle|pick-?up|transfers? included)|free shuttle", r"(?:sea|ocean|beach|mountain|lake)[- ]views?",
+    r"balcon(?:y|ies)", r"jacuzzis?|hot tubs?", r"saunas?", r"spas?", r"rooftops?", r"room service",
+    r"air[- ]?condition(?:ed|ing|er)", r"pet[- ]friendly", r"wheelchair[- ]?\w*|step-free",
+    r"beach-?front", r"free cancell?ation|(?:fully )?refundable", r"award[- ]winning", r"dress code",
+    r"opens? (?:at|from|daily)|closes? (?:at|on)|open (?:daily|24)", r"(?:free entry|entry is free|no entry fee)",
+    r"rated \d(?:\.\d)?|\d(?:\.\d)?[- ]?(?:star rating|out of (?:5|10))|\d(?:\.\d)?[- ]stars?"))
+_SAYS_UNSURE = re.compile(
+    r"\b(?:do(?:es)?(?:n['’]t| not) (?:\w+ )?(?:say|mention|include any (?:information|details?)|show|list|provide|tell|"
+    r"specify|give|state|contain|cover|visit|go)|no (?:\w+ )?(?:information|details?|mention|guidance)|"
+    r"(?:is|are)(?:n['’]t| not) (?:mentioned|listed|included|shown|stated|specified|part of|in (?:the|your|this))|"
+    r"not (?:part of|in) (?:the|your|this) (?:plan|trip|itinerary)|can(?:not|['’]t) (?:say|confirm|tell)|"
+    r"(?:check|confirm|verify|ask) (?:\w+ ){0,4}?(?:whether|if))\b", re.I)
+_CLAUSE_END = re.compile(r"[.!?;](?=\s|$)|\n|,?\s+(?:but|however|although|though|yet)\b", re.I)
+
+
+def says_unsure(text: str, start: int, end: int) -> bool:
+    """Whether the part of the sentence around ``text[start:end]`` only says that the plan does not tell."""
+    left, right = 0, len(text)
+    for m in _CLAUSE_END.finditer(text):
+        if m.end() <= start:
+            left = m.end()
+        elif m.start() >= end:
+            right = m.start()
+            break
+    return bool(_SAYS_UNSURE.search(text[left:right]))
+
+
+def check_features(text: str, leaves: list[str]) -> tuple[list, int]:
+    everything = "\n".join(leaves)
+    flags, looked = [], 0
+    for pattern in _FEATURES:
+        in_plan = {m.group().lower().rstrip("s") for m in pattern.finditer(everything)}
+        for m in pattern.finditer(text):
+            looked += 1
+            if m.group().lower().rstrip("s") not in in_plan and not says_unsure(text, m.start(), m.end()):
+                flags.append({"kind": "features", "value": m.group(),
+                              "sentence": _sentence(text, m.start(), m.end())})
+    return flags, looked
+
+
 # ------------------------------------------------------------------ recording
 def _record(job: str, flags: list, looked: dict, shown: bool, text: str | None = None, **more) -> None:
     counts: dict = {}
@@ -289,6 +337,7 @@ def check_text(text: str, plan, *, start_date, days, question: str = "", amounts
         "dates": check_dates(text, leaves, start_date, days),
         "day_counts": check_day_counts(text, leaves, days),
         "places": check_places(text, leaves, question),
+        "features": check_features(text, leaves),
     }.items():
         found += flags
         looked[kind] = count
@@ -378,12 +427,13 @@ def check_request_values(text: str, filled: dict) -> tuple[list, dict, int]:
     return flags, looked, corrected
 
 
-def record_request_values(text: str, filled: dict) -> None:
+def record_request_values(text: str, filled: dict, used: bool = True) -> None:
+    """``used`` is False when one of the values was not taken."""
     if not observe.active() or not filled:
         return
     try:
         flags, looked, corrected = check_request_values(text, filled)
-        _record("request_reading", flags, looked, True, **({"spelling_corrected": corrected} if corrected else {}))
+        _record("request_reading", flags, looked, used, **({"spelling_corrected": corrected} if corrected else {}))
     except Exception:                                    # noqa: BLE001
         observe.event("fact_check", "request_reading", "error")
 

@@ -226,6 +226,10 @@ def _reading(run: _Run, router, case: dict) -> dict:
               for k, v in case["expect"].items()}
     if "travelers" in fields and case["expect"]["travelers"] is not None:
         fields["travelers"]["note"] = "the app never lets the AI fill in the number of travellers"
+    for field, key in (("days", "days"), ("budget", "budget_inr")):
+        said = watched.last.get(key)                # what the AI proposed and the app did not take
+        if field in fields and rules.get(field) is None and with_ai.get(field) is None and said is not None:
+            fields[field]["ai_refused"] = said
     bad = [f"{k}: {f['ai_result']} (expected {f['expected']}, got {f['with_ai']})"
            for k, f in fields.items() if f["ai_result"] != "right"]
     return {"status": "fail" if bad else "pass", "fields": fields, "problems": bad,

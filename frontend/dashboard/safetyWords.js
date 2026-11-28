@@ -15,6 +15,9 @@ export const AI_CHECKS = {
   wrong_format: ["Answer not in the asked format", "The next try or backup model is used, or the built-in rules"],
   ranking_ids: ["Activity ids that were not on the list", "Those ids are ignored"],
   summary_amounts: ["Summary with a rupee amount not in the plan", "The AI summary is left out; the standard one is shown"],
+  summary_facts: ["Summary with a place, date, amount or hotel feature not in the plan", "The AI summary is left out; the standard one is shown"],
+  chat_facts: ["Chat answer with a place, date, amount or hotel feature not in the plan", "The AI answer is left out; a standard reply is shown"],
+  filled_value: ["A budget or trip length you did not state", "The planner asks you for it"],
   invented_destination: ["A destination you did not name, when you asked for ideas", "Suggestions are offered instead"],
 };
 
@@ -27,6 +30,9 @@ export const RULES = {
   ai_wrong_format: "AI answer format",
   ai_ranking_ids: "AI activity ranking",
   writer_amounts: "AI summary amounts",
+  writer_facts: "AI summary details",
+  chat_facts: "AI chat details",
+  ai_filled_value: "AI budget or trip length",
   ai_invented_destination: "AI destination",
   critic_checks: "Plan checks",
   revision_limit: "Change limit",

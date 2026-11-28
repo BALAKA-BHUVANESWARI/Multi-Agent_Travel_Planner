@@ -356,20 +356,30 @@ Live and voice results are not part of the request records on the other tabs.
 
 ### Made-up fact checks
 
-The checks compare what an AI model returned with facts the app already has. They only record and flag: the planner,
-the summary and the chat reply are exactly as they would be without them. (The older rule that leaves out an AI
-summary with a rupee amount not in the plan still works as before.)
+The checks compare what an AI model returned with facts the app already has. Some of them decide what you see, with
+or without recording:
+
+- An AI **summary** or **chat answer** is left out when it holds an amount of money, a date, a place name or a hotel
+  or place feature (such as a pool, free breakfast, a rating or opening times) that the plan does not hold. You then
+  get the standard summary or a standard chat reply. If a check breaks, the AI text is left out too. A sentence that
+  only says the plan does not tell ("the plan does not say whether there is a pool") is allowed.
+- A **trip length or budget** read by an AI is used only when your own words state it ("a long weekend", "five
+  nights", "fifty thousand"). Otherwise the planner asks.
+
+Everything else is only recorded and flagged: day and night counts, other values read from a request, and the
+activity ranking (unknown ids are dropped, as before).
 
 | AI output | What is compared |
 | --- | --- |
-| Trip summary and chat answers | rupee amounts, dates, day and night counts and place names, against the plan. Places named in the chat question are allowed |
+| Trip summary and chat answers | rupee amounts, dates, day and night counts, place names and hotel or place features, against the plan. For the records only, places named in the chat question are allowed |
 | Values read from a request | places, days, budget and interests that the rules could not read, against the typed words. A one-letter spelling correction is counted, not flagged |
 | Activity ranking | ids that were not on the list the model was given |
 
 **These are not proof.** A flag means "not found in the plan or the request", and it can be a false alarm: a real
 nearby town the plan does not mention is flagged too, and so is a figure the model worked out itself. A made-up detail
-can also slip through: money not written with ₹, Rs, INR or "rupees", a one-word place name that is not a known town
-or city, weekdays, clock times, distances, opinions, and a true detail used in a wrong sentence. No AI judge is used.
+can also slip through: a feature that is not one of the listed kinds, a feature whose word appears elsewhere in the
+plan (a planned spa session lets "your hotel has a spa" pass), money in other forms (a few other currencies are
+caught when deciding what to show), a one-word place name that is not a known town or city, weekdays, clock times, distances, opinions, and a true detail used in a wrong sentence. No AI judge is used.
 
 To read what was flagged, set `RECORD_DETAILS=1`. Each example then has **Real problem** and **False alarm** buttons;
 press a pressed button again to remove the mark. A mark is deleted with its record. Requests made before the checks

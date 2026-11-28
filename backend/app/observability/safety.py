@@ -24,9 +24,11 @@ MAX_LISTED = 200
 def _what(span: dict) -> str:
     """The short reason of one safety event."""
     attrs, name = span["attrs"], span["name"]
-    for key in ("code", "kind", "bucket", "topic", "change", "role"):
+    for key in ("code", "kind", "bucket", "topic", "change", "role", "field"):
         if attrs.get(key):
             return str(attrs[key])
+    if name in ("writer_facts", "chat_facts"):
+        return ", ".join(attrs.get("kinds") or [])
     if name == "critic_checks":
         return ", ".join(sorted(set(attrs.get("codes") or [])))
     if name == "ai_ranking_ids" and attrs.get("unknown"):
@@ -66,7 +68,11 @@ def guardrails(data: Data, texts: dict | None = None) -> dict:
          "rejected": len(of("ai_ranking_ids", "rejected"))},
         {"check": "summary_amounts", "checked": len(of("writer_amounts")),
          "rejected": len(of("writer_amounts", "rejected"))},
+        {"check": "summary_facts", "checked": len(of("writer_facts")),
+         "rejected": len(of("writer_facts", "rejected"))},
+        {"check": "chat_facts", "checked": len(of("chat_facts")), "rejected": len(of("chat_facts", "rejected"))},
         {"check": "invented_destination", "checked": None, "rejected": len(of("ai_invented_destination"))},
+        {"check": "filled_value", "checked": None, "rejected": len(of("ai_filled_value"))},
     ]
     acted = [(r, s) for r, s in data.each()
              if (s["type"] == "guardrail" and (s["status"] in ACTED or s["name"] in ("place_check",)))

@@ -157,11 +157,6 @@ These are real, and the planner is deliberately left unchanged:
 - `dst-india-only`: "somewhere in India" is read as a destination called India, so nothing is suggested ("within
   India" works). Seen offline.
 - `e2e-invalid-date-words`: "31 February" becomes 28 February without a word (31/02/2027 in numbers is reported).
-- `grd-ai-amount-words`: the guard on AI summaries stops `₹`, `Rs` and `INR` amounts, but not "4999 rupees".
-- `grd-ai-place`, `grd-ai-chat`: a place or detail an AI invents is shown. The made-up fact checks only record and
-  flag (an earlier, deliberate choice), and only while records are on.
-- `grd-ai-budget`, `grd-ai-days`: when the budget or trip length is missing and an AI supplies one, the planner
-  uses it without a note, instead of asking.
 - `rp-cheaper-hotel-result`, `rp-cheaper-flight-result`: "cheaper" lowers the level of the whole plan, so asking
   for one changes the other and the activities too.
 - `rp-…-agents` (cheaper hotel, cheaper flight, to train, one more person, no adventure, more history): every
@@ -174,6 +169,11 @@ extra budget lines and other currencies. For several destinations and flexible d
 tell the traveller. Also: a link and retrieval time on travel, hotel, weather and places data (a live fare has a
 time but no link); swapping outdoor for indoor activities, replacing the interests or adding a named group member
 after planning; and trip versions (the earlier plan is overwritten).
+
+The five `grd-ai-…` cases that used to fail here pass since `app/services/ai_guard.py`: an AI summary or chat
+answer with an unsupported amount, date, place or listed feature is not shown, and an AI budget or trip length counts
+only when the traveller's words state it. They test these particular inventions; they do not show that nothing made
+up can ever get through.
 
 ## Self-checks and planted mistakes
 

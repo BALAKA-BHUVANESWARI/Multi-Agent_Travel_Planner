@@ -115,9 +115,11 @@ def test_reading_compares_the_rules_with_the_ai(tmp_path):
                                                                     if c["id"] in ("read-fortnight", "trap-no-budget")]})
     good, trap = record["items"]
     assert good["status"] == "pass" and good["fields"]["days"]["rules_result"] == "missed"
-    assert trap["status"] == "fail" and trap["fields"]["budget"]["ai_result"] == "invented"
+    # the AI made up a budget: the app does not take it, and the record still says what the AI proposed
+    assert trap["fields"]["budget"] == {**trap["fields"]["budget"], "with_ai": None, "ai_result": "right",
+                                        "ai_refused": 200000}
     row = record["providers"]["groq"]["groups"]["reading"]
-    assert row["invented"] == 1 and row["ai_right"] > row["rules_right"]
+    assert row["invented"] == 0 and row["ai_right"] > row["rules_right"]
 
 
 def test_scores_of_a_field():

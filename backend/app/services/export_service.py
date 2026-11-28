@@ -108,7 +108,7 @@ def render_summary(state: dict) -> str:
                      + (f"; {len(m['conflicts'])} touch something they wanted to avoid" if m["conflicts"] else ""))
     L.append("\n## Budget (estimated)")
     for k, v in br["lines"].items():
-        L.append(f"- {k.title()}: {fmt_inr(v)}")
+        L.append(f"- {heading if k == 'flight' else k.title()}: {fmt_inr(v)}")
     status = "OVER budget" if br["over_budget"] else "within budget"
     L.append(f"- **Total: {fmt_inr(br['total'])}** of {fmt_inr(br['budget'])} ({status}); "
              f"{fmt_inr(br['per_person'])} per person")

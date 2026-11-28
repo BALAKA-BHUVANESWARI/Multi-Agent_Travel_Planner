@@ -97,7 +97,7 @@ export default function Hallucinations({ data, show, onShow, onChanged }) {
   return (
     <>
       <p className="note">
-        These are automatic checks, not proof. “Flagged” means a detail in what an AI returned was not found in the plan (or in your typed request). It can be a false alarm, and a made-up detail can also slip through. The checks only record and flag; they change nothing in the planner.
+        These are automatic checks, not proof. “Flagged” means a detail in what an AI returned was not found in the plan (or in your typed request). It can be a false alarm, and a made-up detail can also slip through. A summary or chat answer is left out when it holds an amount, date, place name or hotel feature that is not in the plan, and an AI budget or trip length you did not state is not used. The rest is only recorded.
       </p>
       <div className="tiles">
         <Tile label="Checks run" value={count(data.checked)} note="one for each piece of AI output checked" />

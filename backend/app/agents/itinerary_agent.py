@@ -7,7 +7,7 @@ from app.agents.common import llm_note
 from app.core import security as guardrails
 from app.data.curated_destinations import place_name
 from app.graph.state import entry
-from app.services import fact_checks
+from app.services import ai_guard, fact_checks
 from app.services.chat_service import plan_facts
 from app.services import group_service as group_mod
 from app.services.export_service import render_summary
@@ -89,11 +89,18 @@ def writer_node(state: dict, deps) -> dict:
         grounded = bool(obj) and numbers_are_grounded(obj["overview"], _allowed_amounts(state))
         if obj:
             observe.event("guardrail", "writer_amounts", "ok" if grounded else "rejected")
-            c = state["constraints"]                              # recorded and flagged only
+            c = state["constraints"]
+            amounts_ok = grounded
+            if amounts_ok:                                        # then the other details
+                held = ai_guard.unsupported(
+                    str(obj["overview"]), [facts, plan_facts(state), (state.get("flight") or {}).get("journey")],
+                    start_date=c.get("start_date"), days=c.get("days"), amounts=_allowed_amounts(state))
+                observe.event("guardrail", "writer_facts", "rejected" if held else "ok", kinds=held)
+                grounded = not held
             fact_checks.record_text("summary", str(obj["overview"]),
                                     lambda: [facts, plan_facts(state), (state.get("flight") or {}).get("journey")],
                                     start_date=c.get("start_date"), days=c.get("days"), shown=grounded,
-                                    amounts=lambda: _allowed_amounts(state), amounts_rejected=not grounded)
+                                    amounts=lambda: _allowed_amounts(state), amounts_rejected=not amounts_ok)
         if grounded:
             overview, used = guardrails.sanitize_untrusted(obj["overview"], 900), True
     text = (f"{overview}\n\n---\n\n{template}" if overview else template)

@@ -241,7 +241,7 @@ function Answer({ item, onMark }) {
             { title: "Detail", show: ([k]) => words(k) },
             { title: "Correct", show: ([, f]) => String(f.expected ?? "nothing") },
             { title: "Rules alone", show: ([, f]) => String(f.rules ?? "–") },
-            { title: "With AI", show: ([, f]) => <>{String(f.with_ai ?? "–")} <Status value={f.ai_result === "right" ? "ok" : "warning"} label={FIELD_WORDS[f.ai_result] || f.ai_result} /></> },
+            { title: "With AI", show: ([, f]) => <>{String(f.with_ai ?? "–")} <Status value={f.ai_result === "right" ? "ok" : "warning"} label={FIELD_WORDS[f.ai_result] || f.ai_result} />{f.ai_refused != null && <> (AI said {String(f.ai_refused)}; not used)</>}</> },
           ]}
         />
       )}
