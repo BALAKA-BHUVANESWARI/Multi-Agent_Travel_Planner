@@ -66,7 +66,8 @@ def _cheaper_levels(state: dict, parts: list[str], searched_again: bool) -> tupl
     return levels, done, notes
 
 
-def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict, dict, list[str]]:
+def _apply_changes(state: dict, ch: dict, notes: list[str], deps,
+                   feedback: str = "") -> tuple[dict, dict, list[str]]:
     """Check each requested change and apply the possible ones.
     Returns (state update, applied changes, plain-language notes)."""
     c = dict(state["constraints"])
@@ -91,8 +92,13 @@ def _apply_changes(state: dict, ch: dict, notes: list[str], deps) -> tuple[dict,
             c[key] = ch[key]
     if "month_day" in ch:
         month, day = ch["month_day"]
-        start, _ = intake_mod.compute_start_date(month, day, date.fromisoformat(c["today"]))
-        if start.isoformat() == c["start_date"]:
+        today = date.fromisoformat(c["today"])
+        written = intake_mod.word_date(feedback, today)
+        start = written["exact"] if written and written["exact"] else \
+            intake_mod.compute_start_date(month, day, today)[0]
+        if written and written["problem"]:
+            reject("month_day", "travel dates", written["problem"])
+        elif start.isoformat() == c["start_date"]:
             reject("month_day", "travel dates", "The trip already starts on that date.")
         else:
             c.update(start_date=start.isoformat(), month=month)
@@ -203,7 +209,7 @@ def approval_node(state: dict, decision: dict, deps=None) -> dict:
                           "80000', 'make it 4 days', 'add 1 person', 'move it to January', 'change flight to train', "
                           "'change destination to Jaipur', 'skip water sports', 'more food' or 'relaxed pace'.",
                 "log": [entry("approval", "feedback not understood")]}
-    update, ch, notes = _apply_changes(state, fb["changes"], fb["notes"], deps) if fb["changes"] \
+    update, ch, notes = _apply_changes(state, fb["changes"], fb["notes"], deps, text) if fb["changes"] \
         else ({}, {}, fb["notes"])
     if not ch:                      # recognised but nothing to do (e.g. already cheapest, or not possible)
         return {**base, "replan_reason": None, "notice": " ".join(notes),

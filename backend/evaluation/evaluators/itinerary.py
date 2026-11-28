@@ -166,7 +166,8 @@ def _places(day: dict, items: list[dict], rules: dict, routes: dict) -> list[Fin
 
 def validate(itinerary: dict, constraints: dict, context: dict | None = None, rules: dict | None = None) -> list[Finding]:
     """``constraints``: start_date, days, preferences, max_daily_activity_cost (optional).
-    ``context``: weather {date: rainy}, routes [{from, to, minutes}], budget {total, budget, warned}."""
+    ``context``: weather {date: rainy}, routes [{from, to, minutes}], budget {total, budget, warned},
+    rain_explained [interests the plan says it dropped because of rain]."""
     context = context or {}
     rules = {**DEFAULT_RULES, **{k: v for k, v in (rules or {}).items()}}
     unknown = set(rules) - set(DEFAULT_RULES)
@@ -220,8 +221,13 @@ def validate(itinerary: dict, constraints: dict, context: dict | None = None, ru
                            f"total {money_['total']} is over the budget {money_['budget']}; {told}"))
     wanted = constraints.get("preferences") or []
     unmet = [p for p in wanted if p not in tags]
+    # like the budget: an interest the weather rules out is a warning only when the plan says so itself
+    explained = set(context.get("rain_explained") or []) if weather and any(weather.values()) else set()
     if wanted and len(unmet) == len(wanted):
-        out.append(Finding("preferences_ignored", FAIL, f"nothing matches any of: {', '.join(wanted)}"))
+        told = all(p in explained for p in unmet)
+        out.append(Finding("preferences_ignored", WARN if told else FAIL,
+                           f"nothing matches any of: {', '.join(wanted)}"
+                           + ("; the plan says rain is why" if told else "")))
     else:
         out += [Finding("preference_unmet", WARN, f"nothing matches '{p}'") for p in unmet]
     return out
@@ -249,7 +255,10 @@ def evaluate(case: dict) -> Result:
     wrong = [f"{k}: expected {limits[k]}, the plan used {c.get(k)}"
              for k in ("start_date", "days", "travelers", "budget", "destination") if k in limits and c.get(k) != limits[k]]
     weather = state.get("weather")
-    context = {"weather": {d["date"]: bool(d["rainy"]) for d in weather["days"]} if weather else None,
+    rain_notes = [str(w) for w in state.get("warnings", []) if str(w).startswith("Rain: ") and "interest in " in w]
+    context = {"rain_explained": [p.strip() for w in rain_notes
+                                  for p in w.split("interest in ", 1)[1].split(".", 1)[0].split(",")],
+               "weather": {d["date"]: bool(d["rainy"]) for d in weather["days"]} if weather else None,
                "budget": {"total": report["total"], "budget": c["budget"],
                           "warned": any("over your" in w for w in state.get("warnings", []))}}
     needs = {"start_date": limits.get("start_date", c["start_date"]), "days": limits.get("days", c["days"]),

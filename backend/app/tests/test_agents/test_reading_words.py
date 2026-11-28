@@ -55,9 +55,15 @@ def test_a_past_numeric_date_is_moved_and_said_so():
 @pytest.mark.parametrize("said", ["starting 31/02/2027", "starting 12/25/2026"])
 def test_a_date_that_does_not_exist_is_not_guessed(said):
     got = read(said)
-    assert any("could not read" in a for a in got["assumptions"])
-    assert any("No travel month" in a for a in got["assumptions"])
+    assert "could not read" in got["invalid"]["date"] and "valid start date" in got["invalid"]["date"]
+    assert got["bad_date"] == said.split()[-1]
     assert got["constraints"]["budget"] == 60000
+
+
+def test_an_unreadable_number_beside_a_good_date_is_only_mentioned():
+    got = read("starting 31/02/2027, or 5 March")
+    assert "date" not in got["invalid"] and got["constraints"]["start_date"] == "2027-03-05"
+    assert any("could not read" in a for a in got["assumptions"])
 
 
 @pytest.mark.parametrize("said", ["5N/6D", "with 24/7 reception", "to see a Christmas market"])

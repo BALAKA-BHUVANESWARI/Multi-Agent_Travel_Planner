@@ -61,7 +61,8 @@ def resolve_places(parsed: dict, deps, logs: list) -> None:
                 break
             except geo_mod.PlaceError:
                 continue                                 # not a known place: may need the live lookup
-    if set(parsed["missing"]) - {"destination"} or any(k not in ("origin", "destination") for k in parsed["invalid"]):
+    if set(parsed["missing"]) - {"destination"} \
+            or any(k not in ("origin", "destination", "date") for k in parsed["invalid"]):
         return
     for role in ("origin", "destination"):
         if c[role] is not None:

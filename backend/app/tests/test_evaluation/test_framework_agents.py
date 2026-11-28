@@ -29,8 +29,7 @@ def results():
 
 
 def test_only_the_known_problems_fail(results):
-    assert sorted(i for i, r in results.items() if r["status"] in ("failed", "error")) == \
-        ["dst-india-only", "e2e-invalid-date-words"]
+    assert sorted(i for i, r in results.items() if r["status"] in ("failed", "error")) == []
 
 
 def test_what_the_planner_cannot_do_is_never_counted_as_passed(results):

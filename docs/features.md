@@ -82,7 +82,7 @@ entry, website, stated hours), and the plan says so. Tool: `search_dining`.
 
 | Feature | How it works |
 |---|---|
-| Destination suggestions | Leave the destination out ("Suggest a 4 day beach trip from Delhi in January, budget 70k for 2"). A hand-tagged list of about 50 places is priced with the estimator and ranked by interests, season and budget. No Tavily credits are used. Add "abroad" or "in India" to narrow it. |
+| Destination suggestions | Leave the destination out ("Suggest a 4 day beach trip from Delhi in January, budget 70k for 2"). "Somewhere in India" or "a trip to India" suggests places in India. A hand-tagged list of about 50 places is priced with the estimator and ranked by interests, season and budget. No Tavily credits are used. Add "abroad" or "in India" to narrow it. |
 | Alternative destinations | Every plan lists up to 3 other places for the same dates and group, with estimated totals compared like for like. |
 | Conversational changes | "make it 4 days", "add 1 person", "move it to January", "go by train", "change flight to train", "a cheaper hotel", "a cheaper flight", "change destination to Jaipur", "skip water sports", plus budget, cheaper, more food and relaxed pace. A change searches again only for what it affects. A change that is not possible is explained and does not use up a revision (limit: 2). Rules only, so unusual phrasing may not be understood. |
 | Group preferences | Open "Planning for a group?" and give each person's likes and things to avoid. Activities take turns between people, places everyone wants to avoid are dropped, and "Group fit" shows how each person is served. A place only some want to avoid can still appear, and is listed. |
@@ -193,6 +193,12 @@ The **Chat** button (bottom right) opens a chat that uses the same planner as th
   removed.
 * **Limits:** `VOICE_DAILY_LIMIT` (default 100 recordings a day) and 10 recordings a minute. Check your Groq account's
   free limits.
+
+## When rain drops an interest
+
+Outdoor places are not planned on rainy days. If that leaves nothing in the plan for an interest you named (beaches in
+a week of rain, for example), a warning says which interest, on how many days rain is expected and which places were
+replaced. The warning is worked out again every time the day plan is rebuilt.
 
 ## Control flow in numbers
 
@@ -341,7 +347,9 @@ changed since the run before.
 
 **Wording the rules read.** Dates in numbers with a year (`20/12/2026`, `20-12-2026`, `2026-12-20`), read **day
 first**; `20/12` without a year is not read. "Christmas" (25 December, "Christmas eve" 24), "tomorrow" and "day after
-tomorrow", with a note that says which date was used. Traveller counts in words up to twelve ("four of us", "two
+tomorrow", with a note that says which date was used. A date that does not exist ("31 February", "31 April",
+"31/02/2027") is not moved to another day: the planner asks for a valid one, and a change request to such a date is
+refused. "29 February 2028" is kept; in other word dates the year is not read. Traveller counts in words up to twelve ("four of us", "two
 adults and one child"), "five nights" (6 days) and "Dilli" for Delhi. These apply to new requests; a change request
 on a finished plan still needs a day and a month in words ("move it to 20 December").
 

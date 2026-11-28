@@ -150,13 +150,12 @@ data has them (the offline planner has neither). A straight-line distance is not
 
 ## Known failures
 
-These are real, and not fixed yet:
+None of the planner cases fails at the moment. That means only that the plans agree with the rules in these cases.
 
-- `plan-goa-monsoon`: when every day is rainy, all beaches are replaced, nothing says that the only interest was
-  dropped, and several slots get a general indoor suggestion.
-- `dst-india-only`: "somewhere in India" is read as a destination called India, so nothing is suggested ("within
-  India" works). Seen offline.
-- `e2e-invalid-date-words`: "31 February" becomes 28 February without a word (31/02/2027 in numbers is reported).
+`preferences_ignored` (no stop matches any interest) fails a plan, with one exception that works like the budget
+check: it is a **warning** when the plan itself says rain is why, and the plan has a rainy day. `plan-goa-monsoon`
+passes this way: no beach is planned, and the traveller is told. A silent drop still fails, and so does blaming rain
+on a dry trip (self-checks `check-rain-explained` and `check-rain-excuse-dry`).
 
 **Not supported:** several destinations in one trip, flexible dates, source links, ratings, amenities, live
 availability offline, opening hours, verified entry fees, weather retrieval times, sources for destination facts,

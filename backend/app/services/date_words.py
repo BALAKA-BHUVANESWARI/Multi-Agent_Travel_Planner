@@ -42,6 +42,18 @@ def take_numeric_date(text: str) -> tuple[str, date | None, str | None]:
     return _blank(text, [(f[0], f[1]) for f in found]), good, bad
 
 
+def numeric_date_text(text: str) -> str | None:
+    """The first date written in numbers, real or not, as it was typed."""
+    found = [m for pattern in (_ISO, _DAY_FIRST, _SHORT_YEAR) for m in pattern.finditer(text)]
+    return min(found, key=lambda m: m.start()).group(0) if found else None
+
+
+def named_day_text(text: str) -> str | None:
+    """"Christmas" or "tomorrow" as typed."""
+    found = _CHRISTMAS.search(text) or _TOMORROW.search(text)
+    return found.group(0) if found else None
+
+
 def take_named_days(text: str) -> tuple[str, int | None, int | None]:
     """(text without those words, day of December if Christmas is named, days from today if 'tomorrow' is said)."""
     spans: list[tuple[int, int]] = []

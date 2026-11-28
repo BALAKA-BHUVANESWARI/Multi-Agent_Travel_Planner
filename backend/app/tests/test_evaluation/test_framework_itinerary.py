@@ -17,11 +17,15 @@ def test_planted_mistakes_are_found_and_nothing_else(case_id):
     assert result.status == "passed", result.failures
 
 
-def test_only_the_rainy_beach_trip_fails_on_the_planner():
-    """A known finding: in an all-rain week the planner drops the only interest without saying so. If the planner
-    starts handling it, update this test."""
+def test_every_itinerary_case_passes():
     rows = runner.run(["itinerary"])["cases"]
-    assert [r["id"] for r in rows if r["status"] != "passed"] == ["plan-goa-monsoon"]
+    assert [r["id"] for r in rows if r["status"] != "passed"] == []
+
+
+def test_dropping_an_interest_without_saying_so_still_fails(monkeypatch):
+    monkeypatch.setattr("app.services.itinerary_builder._lost_to_rain", lambda *a: None)
+    result = runner.run_case("itinerary", CASES["plan-goa-monsoon"], itinerary.evaluate)
+    assert any("preferences_ignored" in why for why in result["failures"]), result["failures"]
 
 
 def test_no_route_data_means_not_checked_not_a_guess():

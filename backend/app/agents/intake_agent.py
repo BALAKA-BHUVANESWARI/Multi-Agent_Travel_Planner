@@ -54,6 +54,8 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
     for role in ("origin", "destination"):
         v = obj.get(role)
         if c[role] is None and isinstance(v, str) and _PLACE_TEXT.match(v.strip()):
+            if role == "destination" and intake_mod.is_home_country(v):
+                continue                                    # a whole country: places in it are suggested instead
             other = "destination" if role == "origin" else "origin"
             if not ai_guard.typed_place(v.strip(), text, texts.get(other) or c[other] or ""):
                 refused[role] = v.strip()               # never go with a place the traveller did not name

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 
 from app.core.utils import fmt_inr
 from app.data import gazetteer
@@ -105,10 +106,33 @@ def _place_answer(check: dict, answer: str) -> str | None:
     return said if _PLACE.match(said) and len(said.split()) <= 4 else None
 
 
+# words that only introduce a new date ("make it 28 February instead")
+_DATE_FILLER = re.compile(r"\b(?:ok(?:ay)?|sorry|actually|then|instead|please|i meant?|make it|change it to|use|take|"
+                          r"let'?s (?:say|do)|it'?s|the|start(?:ing|s)?|date|from|on|is|to)\b", re.I)
+
+
+def replace_bad_date(state: dict, request: str, answer: str) -> tuple[str, str]:
+    """When the earlier request has a date that does not exist, put the date in the reply where it stood.
+    Returns (request, what is left of the reply). Without a date in the reply nothing changes, so the planner
+    asks again rather than picking a date itself."""
+    said_today = (state.get("constraints") or {}).get("today")
+    today = date.fromisoformat(said_today) if said_today else date.today()
+    bad = parser.parse_request(request, today)["bad_date"]
+    given = parser.date_in_answer(answer, today) if bad else None
+    if not given:
+        return request, answer
+    request = re.sub(re.escape(bad), lambda _: given, request, flags=re.I)
+    rest = " ".join(answer.replace(given, " ", 1).split()).strip(" ,.;!")
+    return request, rest if re.search(r"[^\W_]", _DATE_FILLER.sub(" ", rest)) else ""
+
+
 def complete_request(state: dict, text: str) -> str:
     """The earlier request plus what the traveller has just added to it."""
     request = state.get("request") or ""
     answer = " ".join(text.replace("|", " ").split()).strip(" .!")
+    request, answer = replace_bad_date(state, request, answer)
+    if not answer:
+        return request
     check = state.get("place_check")
     if check:                                                  # the answer to "Did you mean ...?"
         chosen = _place_answer(check, answer)

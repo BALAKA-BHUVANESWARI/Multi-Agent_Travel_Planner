@@ -22,6 +22,7 @@ MORNING = ("morning", 9 * 60 + 30, 13 * 60)
 AFTERNOON = ("afternoon", 14 * 60, 18 * 60)
 EVENING = ("evening", 18 * 60 + 30, 22 * 60 + 30)
 MIN_SLOT_MIN = 45
+RAIN_NOTE = "Rain: nothing planned matches your interest in "     # how the warning about a lost interest begins
 LEAD_FLIGHT, LEAD_GROUND, LEAD_ROAD = 180, 60, 0   # minutes at the airport / station before departing
 
 
@@ -45,6 +46,25 @@ def _slots_for_day(i: int, n: int, arr: int, dep: int, pace: str,
 def _item(kind: str, name: str, start: int, end: int, **extra) -> dict:
     return {"type": kind, "name": name, "start": to_hhmm(start), "end": to_hhmm(end),
             "start_min": start, "end_min": end, **extra}
+
+
+def _lost_to_rain(wanted: list[str], placed: dict, swaps: list[dict], candidates: list[dict],
+                  rainy_days: int, n: int) -> str | None:
+    """A warning when the rain swaps left an interest the traveller named with nothing in the plan."""
+    served = {t for items in placed.values() for it in items for t in it.get("tags", [])}
+    tags = {c["name"]: c.get("tags", []) for c in candidates}
+    lost, names = [], []
+    for pref in wanted:
+        replaced = [s["from"] for s in swaps if pref in tags.get(s["from"], [])]
+        if pref not in served and replaced:
+            lost.append(pref)
+            names += replaced
+    if not lost:
+        return None
+    when = f"all {n} days" if rainy_days == n else f"{rainy_days} of {n} days"
+    return (f"{RAIN_NOTE}{', '.join(lost)}. Rain is expected on {when}, so outdoor places such as "
+            f"{' and '.join(list(dict.fromkeys(names))[:2])} were replaced with indoor plans. For a better chance, "
+            "try drier dates or check the forecast closer to the trip.")
 
 
 def build_itinerary(constraints: dict, flight_sel: dict | None, hotel_sel: dict | None,
@@ -141,6 +161,9 @@ def build_itinerary(constraints: dict, flight_sel: dict | None, hotel_sel: dict 
             warnings.append(f"Day {i + 1} has no activities (not enough matching places for your budget tier).")
         days.append({"day": i + 1, "date": dates[i].isoformat(), "kind": kind, "weather": w,
                      "rainy": rainy[i], "items": items, "notes": notes})
+    dropped = _lost_to_rain(constraints.get("preferences") or [], placed, swaps, candidates, sum(rainy.values()), n)
+    if dropped:
+        warnings.append(dropped)
     itin = {"start_date": dates[0].isoformat(), "end_date": dates[-1].isoformat(), "nights": n - 1,
             "destination": constraints["destination"], "days": days, "swaps": swaps}
     return itin, warnings

@@ -108,21 +108,58 @@ def parse_days(text: str) -> int | None:
     return None
 
 
-def parse_month(text: str) -> tuple[int | None, int | None]:
-    """Return (month, day_of_month). 'may' must follow a preposition to avoid the verb."""
-    low = text.lower()
-    mon = rf"({_MONTH_FULL}|may|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)"
+_ANY_MONTH = rf"({_MONTH_FULL}|may|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)"
+
+
+def _day_and_month(low: str) -> tuple[int, int, int, int] | None:
+    """The first day written with a month name: (month, day, start, end of that text). The day is not checked."""
     year = r"(?:20\d\d)\b"
-    m = re.search(rf"(?<![\d,.])(\d{{1,2}})(?:st|nd|rd|th)\s+(?:of\s+)?{mon}\b", low) or \
-        re.search(rf"(?<![\d,.])(\d{{1,2}})\s+(?:of\s+)?{mon}\b(?!\s*(?!{year})\d)", low)       # a year may follow
-    if m and 1 <= int(m.group(1)) <= 31:
-        return MONTHS[m.group(2)], int(m.group(1))
+    m = re.search(rf"(?<![\d,.])(\d{{1,2}})(?:st|nd|rd|th)\s+(?:of\s+)?{_ANY_MONTH}\b", low) or \
+        re.search(rf"(?<![\d,.])(\d{{1,2}})\s+(?:of\s+)?{_ANY_MONTH}\b(?!\s*(?!{year})\d)", low)   # a year may follow
+    if m:
+        return MONTHS[m.group(2)], int(m.group(1)), m.start(), m.end()
     # "December 28th", or "December 28" when the number can't be a count of days, people or money
     not_a_day = r"(?![\s-]*(?:days?|nights?|weeks?|people|persons?|adults?|kids?|children|friends|travell?ers?|pax|" \
                 r"of us|k\b|l\b|lakh|lac|thousand)|[,.]\d|%)"
-    m = re.search(rf"\b{mon}\s+(\d{{1,2}})(?:(?:st|nd|rd|th)\b|\b{not_a_day})", low)
-    if m and 1 <= int(m.group(2)) <= 31:
-        return MONTHS[m.group(1)], int(m.group(2))
+    m = re.search(rf"\b{_ANY_MONTH}\s+(\d{{1,2}})(?:(?:st|nd|rd|th)\b|\b{not_a_day})", low)
+    if m:
+        return MONTHS[m.group(1)], int(m.group(2)), m.start(), m.end()
+    return None
+
+
+def word_date(text: str, today: date) -> dict | None:
+    """The date written as a day and a month name, if any: {said, month, day, exact, problem}. ``problem`` says
+    why such a day does not exist ("31 February"); ``exact`` is set for a 29 February whose leap year is named."""
+    found = _day_and_month(text.lower())
+    if found is None:
+        return None
+    month, day, start, end = found
+    tail = re.match(r"(?:\s*,\s*|\s+)(20\d\d)\b", text[end:])
+    year_said = int(tail.group(1)) if tail else None
+    said = text[start:end + (tail.end() if tail else 0)]
+    out = {"said": said, "month": month, "day": day, "exact": None, "problem": None}
+    if (month, day) == (2, 29) and year_said and calendar.isleap(year_said) and date(year_said, 2, 29) > today:
+        out["exact"] = date(year_said, 2, 29)
+        return out
+    # the year the trip would start in: this one if the day is still ahead (or the month is this one), else next
+    year = today.year if (month, day) > (today.month, today.day) or month == today.month else today.year + 1
+    if (month, day) == (2, 29) and year_said and not calendar.isleap(year_said):
+        year = year_said
+    length = calendar.monthrange(year, month)[1]
+    if day == 0 or day > length:
+        name = calendar.month_name[month]
+        why = f"{name} has no day 0" if day == 0 else \
+            f"{name}{f' {year}' if month == 2 else ''} has only {length} days"
+        out["problem"] = f"“{said}” does not exist: {why}. Please give a valid start date."
+    return out
+
+
+def parse_month(text: str) -> tuple[int | None, int | None]:
+    """Return (month, day_of_month). 'may' must follow a preposition to avoid the verb."""
+    low = text.lower()
+    found = _day_and_month(low)
+    if found and 1 <= found[1] <= 31:
+        return found[0], found[1]
     m = re.search(rf"\b(?:in|during|for|around|early|late|mid|this|next|of|by)\s+(?:the\s+)?(?:month\s+of\s+)?"
                   rf"({_MONTH_FULL}|may|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b", low)
     if m:
@@ -337,18 +374,32 @@ def parse_places(text: str) -> tuple[str | None, str | None, dict[str, str]]:
     return origin, dest, texts
 
 
+def date_in_answer(text: str, today: date) -> str | None:
+    """The part of a short reply that says when to start ("28 February", "28/02/2027", "March", "tomorrow")."""
+    numbers = date_words.numeric_date_text(text)
+    if numbers:
+        return numbers
+    written = word_date(text, today)
+    if written:
+        return written["said"]
+    named = date_words.named_day_text(text)
+    if named:
+        return named
+    month = re.search(rf"\b(?:in\s+)?(?:{_MONTH_FULL}|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\bin\s+may\b",
+                      text, re.I)
+    return month.group(0) if month else None
+
+
 def compute_start_date(month: int | None, day: int | None, today: date) -> tuple[date, bool]:
     """Return (start_date, assumed). With no month: today + 21 days (assumed)."""
     if month is None:
         return today + timedelta(days=21), True
-    year = today.year
-    d = min(day or 10, 28 if month == 2 else calendar.monthrange(year, month)[1])
-    cand = date(year, month, d)
+    def in_year(year: int) -> date:
+        return date(year, month, min(day or 10, calendar.monthrange(year, month)[1]))
+
+    cand = in_year(today.year)
     if cand <= today:
-        if month == today.month:
-            cand = today + timedelta(days=3)
-        else:
-            cand = date(year + 1, month, d)
+        cand = today + timedelta(days=3) if month == today.month else in_year(today.year + 1)
     return cand, False
 
 
@@ -410,9 +461,16 @@ def parse_scope(text: str) -> str:
     low = text.lower()
     if re.search(r"\b(abroad|overseas|international|outside india|foreign)\b", low):
         return "abroad"
-    if re.search(r"\b(in india|within india|inside india|domestic)\b", low):
+    if re.search(r"\b(in india|within india|inside india|domestic)\b|"
+                 r"\b(?:to|visit|visiting|explore|exploring|around|across|anywhere|somewhere) india\b|"
+                 r"\bdestination:\s*india\b", low):
         return "india"
     return "any"
+
+
+def is_home_country(name: str) -> bool:
+    """"India" on its own is a whole country, not a place a trip can be planned to."""
+    return gazetteer.normalize(name) == "india"
 
 
 def _start_date(numeric: date | None, unreadable: str | None, christmas: int | None, ahead: int | None,
@@ -455,8 +513,11 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     if chosen:
         dest = None
         texts["destination"] = chosen
+    if is_home_country(texts.get("destination") or ""):         # so places inside India are suggested
+        texts.pop("destination")
     days = parse_days(text)
     month, day = parse_month(text)
+    written = word_date(text, today)
     budget, per_person = parse_budget(text)
     travelers, assumed_t = parse_travelers(text)
     prefs = parse_preferences(text)
@@ -481,8 +542,23 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     if budget is not None and per_person:
         budget *= travelers
         assumptions.append("Budget read as per person and multiplied by the number of travelers.")
-    start, month, date_notes = _start_date(numeric, unreadable, christmas, ahead, month, day, today)
-    assumptions += date_notes
+    bad_date = None                      # a date that does not exist is asked about, never quietly moved
+    exact = None
+    if numeric is None and christmas is None and ahead is None:
+        if written and written["problem"]:
+            bad_date, invalid["date"] = written["said"], written["problem"]
+        elif written and written["exact"]:
+            exact = written["exact"]
+        elif unreadable and day is None:
+            bad_date = unreadable
+            invalid["date"] = (f"I could not read '{unreadable}' as a date: numbers are read day first "
+                               "(day/month/year). Please give a valid start date.")
+    if exact:
+        start, month, date_notes = exact, exact.month, []
+    else:
+        start, month, date_notes = _start_date(numeric, unreadable, christmas, ahead, month, day, today)
+    if "date" not in invalid:
+        assumptions += date_notes
     constraints = {
         "origin": origin, "destination": dest, "days": days, "month": month,
         "start_date": start.isoformat(), "budget": budget, "travelers": travelers,
@@ -492,7 +568,7 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     missing = [k for k in ("origin", "destination", "days", "budget")
                if constraints[k] is None and k not in texts]
     return {"constraints": constraints, "missing": missing, "invalid": invalid, "assumptions": assumptions,
-            "texts": texts, "place_answers": place_answers}
+            "texts": texts, "place_answers": place_answers, "bad_date": bad_date}
 
 
 _QUESTION = {

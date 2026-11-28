@@ -6,12 +6,12 @@ import re
 from app.agents.common import llm_note
 from app.core import security as guardrails
 from app.data.curated_destinations import place_name
-from app.graph.state import entry
+from app.graph.state import RESET, entry
 from app.services import ai_guard, fact_checks
 from app.services.chat_service import plan_facts
 from app.services import group_service as group_mod
 from app.services.export_service import render_summary
-from app.services.itinerary_builder import build_itinerary
+from app.services.itinerary_builder import RAIN_NOTE, build_itinerary
 from app.observability import recorder as observe
 
 
@@ -29,6 +29,10 @@ def merge_node(state: dict, deps) -> dict:
         if m["likes"] and not m["matched"]:
             warns.append(f"Group: nothing planned matches what {m['name']} likes ({', '.join(m['likes'])}). "
                          "No suitable place fitted the dates and budget tier.")
+    earlier = state.get("warnings") or []
+    kept = [w for w in earlier if not w.startswith(RAIN_NOTE)]
+    if len(kept) != len(earlier):          # a replan: what the last plan lost to rain may not be true of this one
+        warns = [RESET, *kept, *warns]
     return {"itinerary": itin, "group_report": report, "warnings": warns, "log": log}
 
 
