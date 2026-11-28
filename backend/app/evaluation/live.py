@@ -11,6 +11,7 @@ goes into the dashboard's request records. Keys are never printed or saved.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import re
@@ -24,11 +25,11 @@ from app.agents.intake_agent import intake_node
 from app.agents.itinerary_agent import _allowed_amounts, ask_overview, numbers_are_grounded
 from app.core import config
 from app.database.repositories import Store
-from app.evaluation import results
+from app.evaluation import repeat, results
 from app.graph.deps import Deps
 from app.graph.runner import Planner
 from app.graph.state import initial_state
-from app.services import chat_service, fact_checks
+from app.services import ai_guard, chat_service, fact_checks
 from app.services.llm_service import LLMRouter, ProviderError, default_transport
 from app.tools.client import InProcessClient
 
@@ -111,8 +112,19 @@ class LiveStore(Store):
         return super().bump(name, today)
 
 
+def call_result(status: int) -> str:
+    if status == 200:
+        return "ok"
+    if status == 429:
+        return "rate_limited"
+    return "server_busy" if status >= 500 else "refused"
+
+
 class _Run:
-    def __init__(self, env, store: LiveStore, budget: Budget, transport, sleep, pause: float, on_item, rng):
+    def __init__(self, env, store: LiveStore, budget: Budget, transport, sleep, pause: float, on_item, rng,
+                 clock: Callable[[], float] = time.monotonic):
+        self.clock, self.job, self.case = clock, "", ""
+        self.call_log: list[dict] = []             # every call that was sent: what it was for, how it went, how long
         self.env, self.store, self.budget, self.sleep, self.pause = env, store, budget, sleep, pause
         self.on_item, self.rng = on_item, rng
         self.send = transport or default_transport
@@ -140,10 +152,29 @@ class _Run:
             self.sleep(self.pause)                 # free plans allow only a few calls a minute
         self.budget.used += 1
         self.calls[self.current] = self.calls.get(self.current, 0) + 1
-        status, payload = self.send(url, headers, body, timeout)
+        entry = {"provider": self.current, "job": self.job, "case": self.case}
+        started = self.clock()
+        try:
+            status, payload = self.send(url, headers, body, timeout)
+        except ProviderError as e:
+            self._log(entry, "timeout" if "timed out" in str(e).lower() else "network", started)
+            raise
+        self._log(entry, call_result(status), started)
         if status == 429:
             self.limited.add(self.current)
         return status, payload
+
+    def _log(self, entry: dict, result: str, started: float) -> None:
+        self.call_log.append({**entry, "result": result, "seconds": round(max(0.0, self.clock() - started), 3)})
+
+    def unused_reply(self, sent_before: int) -> bool:
+        """A case or judgement got no answer: was a call made at all? A reply that arrived but could not be used
+        counts as a failed call."""
+        if len(self.call_log) == sent_before:
+            return False
+        if self.call_log[-1]["result"] == "ok":
+            self.call_log[-1]["result"] = "unusable"
+        return True
 
     def router(self, name: str) -> LLMRouter:
         if name not in self.routers:
@@ -274,12 +305,18 @@ def _summary(run: _Run, router, case: dict) -> dict:
         return {"status": "no_answer"}
     text, c = str(obj["overview"])[:2000], state["constraints"]
     allowed = _allowed_amounts(state)
-    shown = numbers_are_grounded(obj["overview"], allowed)
+    amounts_ok = numbers_are_grounded(obj["overview"], allowed)
+    held = [] if not amounts_ok else ai_guard.unsupported(      # as in the app's writer step
+        str(obj["overview"]), _plan_data(state, facts), start_date=c.get("start_date"), days=c.get("days"),
+        amounts=allowed)
+    shown = amounts_ok and not held
     flags, looked = fact_checks.check_text(text, _plan_data(state, facts), start_date=c.get("start_date"),
                                            days=c.get("days"), amounts=allowed)
     problems = [f"{f['kind']}: {f['value']}" for f in flags]
-    if not shown:
+    if not amounts_ok:
         problems.insert(0, "the app would not show this text: an amount does not match the plan")
+    elif held:
+        problems.insert(0, f"the app would not show this text: unsupported {', '.join(held)}")
     return {"status": "fail" if problems else "pass", "answer": text, "problems": problems, "shown": shown,
             "flags": [f"{f['kind']}: {f['value']}" for f in flags], "looked_at": sum(looked.values()),
             "judge_data": facts}
@@ -287,9 +324,12 @@ def _summary(run: _Run, router, case: dict) -> dict:
 
 def _chat(run: _Run, router, case: dict) -> dict:
     state = run.plan(case["plan"])
-    answer = chat_service.ai_answer(state, case["text"], router)
+    watched = _Recorder(router)
+    passed_on = chat_service.ai_answer(state, case["text"], watched)
+    answer = " ".join(str((watched.last or {}).get("answer") or "").split())[:800]
     if not answer:
         return {"status": "no_answer"}
+    shown = passed_on is not None                  # the app may hold an answer back: it is still the AI's answer
     c, data = state["constraints"], chat_service.plan_facts(state)
     flags, looked = fact_checks.check_text(answer, [data, (state.get("flight") or {}).get("journey")],
                                            start_date=c.get("start_date"), days=c.get("days"), question=case["text"])
@@ -298,7 +338,11 @@ def _chat(run: _Run, router, case: dict) -> dict:
         problems.append("the plan cannot answer this, but the reply does not say so")
     if _CLAIMS_ACTION.search(answer):
         problems.append("the reply says it booked, cancelled or changed something")
-    return {"status": "fail" if problems else "pass", "answer": answer, "problems": problems,
+    if not shown:
+        held = ai_guard.unsupported(answer, [data, (state.get("flight") or {}).get("journey")],
+                                    start_date=c.get("start_date"), days=c.get("days"))
+        problems.insert(0, f"the app would not show this answer: unsupported {', '.join(held)}")
+    return {"status": "fail" if problems else "pass", "answer": answer, "problems": problems, "shown": shown,
             "not_in_plan": bool(case.get("not_in_plan")), "flags": [f"{f['kind']}: {f['value']}" for f in flags],
             "looked_at": sum(looked.values()), "judge_data": data}
 
@@ -319,6 +363,8 @@ def _judge(run: _Run, item: dict, providers: list[str]) -> None:
         item["judge"] = {"not_run": why}
         return
     router = run.fresh(judge)
+    run.job, run.case = "judge", item["case"]
+    sent = len(run.call_log)
     flipped = False
     if item["group"] == "ranking":
         flipped = run.rng.random() < 0.5            # the judge must not know which list the AI made
@@ -332,6 +378,7 @@ def _judge(run: _Run, item: dict, providers: list[str]) -> None:
         found = router.complete_json("chat", _JUDGE_TEXT, json.dumps(data, ensure_ascii=False, default=str),
                                      _JUDGE_TEXT_SCHEMA)
     if not found:
+        run.unused_reply(sent)
         run.silent[judge] = run.silent.get(judge, 0) + 1
         item["judge"] = {"not_run": "the call limit for this run was reached" if run.blocked
                          else f"{judge}: {run.failure(router)}"}
@@ -351,7 +398,7 @@ def _mean(values: list) -> float | None:
     return round(sum(values) / len(values), 3) if values else None
 
 
-def summarise(items: list[dict], providers: list[str], calls: dict, models: dict) -> dict:
+def summarise(items: list[dict], providers: list[str], calls: dict, models: dict, log: list | None = None) -> dict:
     out = {}
     for name in providers:
         mine = [i for i in items if i["provider"] == name]
@@ -382,10 +429,10 @@ def summarise(items: list[dict], providers: list[str], calls: dict, models: dict
             else:
                 row["flagged"] = sum(bool(i["flags"]) for i in done)
                 row["judge_flagged"] = sum(bool(j["unsupported"]) for j in judged)
-                if group == "summary":
-                    row["not_shown"] = sum(not i["shown"] for i in done)
+                row["not_shown"] = sum(not i["shown"] for i in done)
             groups[group] = row
-        out[name] = {"model": models.get(name, ""), "calls": calls.get(name, 0), "groups": groups}
+        out[name] = {"model": models.get(name, ""), "calls": calls.get(name, 0), "groups": groups,
+                     "call_stats": repeat.call_stats([c for c in log or [] if c["provider"] == name])}
     return out
 
 
@@ -400,16 +447,19 @@ def run(env, *, providers: list[str], cases: dict | None = None, db: str | None 
     budget = Budget(limit)
     store = LiveStore(db or config.db_path(), budget)
     record = {"id": results.new_id(), "limit": budget.limit, "calls_used": 0, "providers": {}, "items": [],
-              "judge": judge, "fixed_date": str(TODAY), "cache": "off", "finished": False}
+              "judge": judge, "fixed_date": str(TODAY), "cache": "off", "finished": False,
+              "measure": repeat.MEASURE, "call_log": [],
+              "cases_id": hashlib.sha256(json.dumps(cases, sort_keys=True).encode()).hexdigest()[:12]}
 
     def keep() -> None:
         record["calls_used"] = budget.used
         record["items"] = [{k: v for k, v in i.items() if k != "judge_data"} for i in state.items]
-        record["providers"] = summarise(state.items, providers, state.calls, state.models)
+        record["call_log"] = list(state.call_log)
+        record["providers"] = summarise(state.items, providers, state.calls, state.models, state.call_log)
         if save:
             results.save("live", record)
 
-    state = _Run(env, store, budget, transport, sleep, pause, on_item, random.Random(seed))
+    state = _Run(env, store, budget, transport, sleep, pause, on_item, random.Random(seed), clock)
     state.on_wait = on_wait
     try:
         for name in providers:
@@ -425,14 +475,20 @@ def run(env, *, providers: list[str], cases: dict | None = None, db: str | None 
                         state.add({**item, "status": "not_run", "problems": [why]})
                         continue
                     router = state.fresh(name)
+                    state.job, state.case, sent = group, case["id"], len(state.call_log)
                     started = clock()
                     try:
                         outcome = TESTS[group](state, router, case)
                     except Exception as e:                      # noqa: BLE001 - one broken case must not end the run
                         outcome = {"status": "error", "problems": [f"the test itself failed: {type(e).__name__}"]}
                     if outcome["status"] == "no_answer":
+                        asked = state.unused_reply(sent)
                         if state.blocked:
                             outcome = {"status": "not_run", "problems": ["the call limit for this run was reached"]}
+                        elif not asked:                 # e.g. the app's daily limit: not the AI's failure
+                            state.silent[name] = state.silent.get(name, 0) + 1
+                            outcome = {"status": "not_run",
+                                       "problems": [f"no call was made: {state.failure(router)}"]}
                         else:
                             state.silent[name] = state.silent.get(name, 0) + 1
                             outcome["problems"] = [state.failure(router)]

@@ -181,10 +181,13 @@ function summaryRows(run) {
       row("Ranking: ids made up", "ranking", (g) => count(g.unknown_ids)),
       row("Summaries with no problem found", "summary", noProblem),
       row("Summaries the app would not show", "summary", (g) => count(g.not_shown)),
+      row("Chat answers the app would not show", "chat", (g) => (g.not_shown == null ? "–" : count(g.not_shown))),
       row("Summaries where the judge found unsupported statements", "summary", judged),
       row("Chat answers with no problem found", "chat", noProblem),
       row("Chat answers where the judge found unsupported statements", "chat", judged),
       { label: "Cases with no answer", cells: total("no_answer") },
+      { label: "Calls that failed", cells: names.map((n) => { const c = run.providers[n].call_stats; return c ? share(c.failed, c.made) : "–"; }) },
+      { label: "Typical reply time (successful calls)", cells: names.map((n) => { const s = run.providers[n].call_stats?.reply.median; return s == null ? "–" : `${Math.round(s * 10) / 10} s`; }) },
       { label: "Cases not run", cells: total("not_run") },
       { label: "Your checks", cells: names.map((n) => { const h = run.hand[n] || { good: 0, wrong: 0, answers: 0 }; return h.good + h.wrong ? `${count(h.good)} good, ${count(h.wrong)} wrong, of ${count(h.answers)} answers` : `none of ${count(h.answers)} answers`; }) },
     ],
@@ -276,7 +279,7 @@ function Live({ live, onPick, onChanged }) {
   const how = (
     <>
       <p className="note">These call your AI providers with your keys, so you start them yourself from the backend folder. A run uses at most 100 calls, retries and the AI judge included, with the saved-answer cache off.</p>
-      <pre>{"python evals/run_live_evals.py --list\npython evals/run_live_evals.py"}</pre>
+      <pre>{"python evals/run_live_evals.py --list\npython evals/run_live_evals.py\npython evals/run_live_evals.py --report"}</pre>
     </>
   );
   if (!run) {
@@ -305,6 +308,7 @@ function Live({ live, onPick, onChanged }) {
         action={live.runs.length > 1 && <Choice label="Run" value={run.id} onChange={onPick} choices={live.runs.map((r) => [r.id, when(r.started)])} />}
       >
         {how}
+        {!run.measure && <p className="note">This run is from an older version of the test: a chat answer the app held back may show as “No answer”, and calls were not timed one by one.</p>}
         <Table
           caption="Live AI test results by provider"
           rows={rows}

@@ -364,6 +364,14 @@ otherwise the same one, which the tab says. When it compares two activity lists 
 On the tab you can mark each answer **Good** or **Wrong**. These are a few cases per job: enough to spot problems,
 not to prove that one model is better.
 
+**Repeated runs.** One run says little, so run the test at least three times, at different times of day, without
+committing in between. `python evals/run_live_evals.py --report` then puts the runs together without calling
+anything: accuracy and which cases changed between runs; unsupported claims, and how many the app stopped or would
+have shown; failed calls by kind; and the reply time of successful calls without pauses and waits. It prints the
+report and saves it as `.runtime/evals/live-report.md`. Only runs of the same code version and the same test cases
+are combined. Runs made before this change are left out: they counted a chat answer the app held back as no answer,
+and did not time each call. The cases are few, so treat the figures as a sample, not a benchmark.
+
 **Voice.** You record ten set sentences (`01.m4a` to `10.m4a` in `.runtime/voice_test/`). It checks whether the
 planner reads the right places, numbers and dates from the transcript. Only pass or fail per detail is saved, never
 the transcript or the sound. The recordings stay where you put them until you delete them.

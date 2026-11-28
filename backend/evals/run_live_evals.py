@@ -5,6 +5,7 @@
     python evals/run_live_evals.py --providers groq       # one provider
     python evals/run_live_evals.py --only reading,chat    # some of the tests
     python evals/run_live_evals.py --no-judge             # without the AI judge
+    python evals/run_live_evals.py --report               # put the saved runs together; calls nothing
 
 At most 100 calls a run, retries and the judge included. The saved-answer cache is off, and the calls count
 toward the app's daily limit per provider. Plans are built offline with a fixed date and made-up requests;
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from app.core import config  # noqa: E402
-from app.evaluation import live, results  # noqa: E402
+from app.evaluation import live, repeat, results  # noqa: E402
 
 WORDS = {"pass": "ok", "fail": "PROBLEM", "no_answer": "no answer", "not_run": "not run", "error": "TEST ERROR"}
 
@@ -60,16 +61,33 @@ def summary_lines(record: dict) -> list[str]:
         for group, title in (("summary", "summaries"), ("chat", "chat     ")):
             r = g[group]
             if r["answered"]:
-                extra = f"; {r['not_shown']} the app would not show" if group == "summary" else ""
+                extra = f"; {r['not_shown']} the app would not show"
                 judge = f"; judge found unsupported statements in {r['judge_flagged']} of {r['judged']}" \
                     if r["judged"] else ""
                 lines.append(f"  {title} {r['passed']} of {r['answered']} with no problem found; flagged by the fact "
                              f"checks {r['flagged']}{extra}{judge}")
+        calls = found.get("call_stats") or {}
+        if calls.get("made"):
+            middle = calls["reply"]["median"]
+            lines.append(f"  calls     {calls['failed']} of {calls['made']} failed"
+                         + (f"; typical reply {middle:g} s" if middle is not None else ""))
         silent = sum(v["no_answer"] for v in g.values())
         skipped = sum(v["not_run"] for v in g.values())
         if silent or skipped:
             lines.append(f"  not answered {silent}, not run {skipped}")
     return lines
+
+
+def write_report(last: int | None) -> int:
+    found, left_out = repeat.comparable(results.runs("live"), last)
+    report = repeat.text(found, left_out, results.marks())
+    print(report)
+    if not found:
+        return 1
+    path = results.folder() / "live-report.md"
+    path.write_text(report + "\n", encoding="utf-8")
+    print(f"\nSaved to {path}. Nothing was called.")
+    return 0
 
 
 def main() -> int:
@@ -80,8 +98,12 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=live.MAX_CALLS, help="most calls for this run (never above 100)")
     ap.add_argument("--pause", type=float, default=2.0, help="seconds between calls")
     ap.add_argument("--no-judge", action="store_true")
+    ap.add_argument("--report", action="store_true", help="put the saved runs together; make no calls")
+    ap.add_argument("--last", type=int, help="with --report: only the newest this many comparable runs")
     args = ap.parse_args()
     config.load_env()
+    if args.report:
+        return write_report(args.last)
     ready = live.available_providers(os.environ)
     wanted = [p.strip().lower() for p in args.providers.split(",")] if args.providers else ready
     if args.list and not wanted:
