@@ -127,31 +127,53 @@ def _day_and_month(low: str) -> tuple[int, int, int, int] | None:
     return None
 
 
+# A year written after a date: "25 December 2027", "March, 2028". Totals start at MIN_BUDGET, above any such number,
+# but "March, 2050 per head" is money.
+_YEAR_AFTER = (r"(?:\s*,\s*|\s+(?:of\s+)?)(20[2-9]\d)\b(?![,.]\d)(?!\s*(?:rs\b|inr\b|rupees|₹|k\b|lakhs?\b|lacs?\b|"
+               r"thousand|/-|per\b|a\s+(?:head|day|night|person)\b|each\b|people\b|persons?\b|pax\b))")
+
+
 def word_date(text: str, today: date) -> dict | None:
     """The date written as a day and a month name, if any: {said, month, day, exact, problem}. ``problem`` says
-    why such a day does not exist ("31 February"); ``exact`` is set for a 29 February whose leap year is named."""
+    why such a day does not exist ("31 February"); ``exact`` is the full date when the year is written too."""
     found = _day_and_month(text.lower())
     if found is None:
         return None
     month, day, start, end = found
-    tail = re.match(r"(?:\s*,\s*|\s+)(20\d\d)\b", text[end:])
+    tail = re.match(_YEAR_AFTER, text[end:], re.I)
     year_said = int(tail.group(1)) if tail else None
     said = text[start:end + (tail.end() if tail else 0)]
     out = {"said": said, "month": month, "day": day, "exact": None, "problem": None}
-    if (month, day) == (2, 29) and year_said and calendar.isleap(year_said) and date(year_said, 2, 29) > today:
-        out["exact"] = date(year_said, 2, 29)
-        return out
-    # the year the trip would start in: this one if the day is still ahead (or the month is this one), else next
-    year = today.year if (month, day) > (today.month, today.day) or month == today.month else today.year + 1
-    if (month, day) == (2, 29) and year_said and not calendar.isleap(year_said):
-        year = year_said
+    # without a year the trip would start this year if the day is still ahead (or the month is this one), else next
+    year = year_said or (today.year if (month, day) > (today.month, today.day) or month == today.month
+                         else today.year + 1)
     length = calendar.monthrange(year, month)[1]
     if day == 0 or day > length:
         name = calendar.month_name[month]
         why = f"{name} has no day 0" if day == 0 else \
             f"{name}{f' {year}' if month == 2 else ''} has only {length} days"
         out["problem"] = f"“{said}” does not exist: {why}. Please give a valid start date."
+    elif year_said:
+        out["exact"] = date(year_said, month, day)
     return out
+
+
+def year_date(text: str, today: date) -> tuple[date, bool] | None:
+    """The start date when the request names its year: (date, whether a day was said too). "25 December 2027",
+    "Christmas 2027" and "March 2028" (taken as the 10th). None when no year is written with the date used."""
+    written = word_date(text, today)
+    if written and 1 <= written["day"] <= 31:
+        return (written["exact"], True) if written["exact"] else None
+    rest, christmas, ahead = date_words.take_named_days(text)
+    month = parse_month(rest)[0]
+    if christmas is not None and month in (None, 12):
+        said = re.search(r"\b(?:christmas|x-?mas)(?:[\s-]+(?:eve|day))?" + _YEAR_AFTER, text, re.I)
+        return (date(int(said.group(1)), 12, christmas), True) if said else None
+    if month is None or christmas is not None or ahead is not None:
+        return None
+    names = "|".join(name for name, number in MONTHS.items() if number == month)
+    said = re.search(rf"\b(?:{names})\b" + _YEAR_AFTER, rest, re.I)
+    return (date(int(said.group(1)), month, 10), False) if said else None
 
 
 def parse_month(text: str) -> tuple[int | None, int | None]:
@@ -382,11 +404,12 @@ def date_in_answer(text: str, today: date) -> str | None:
     written = word_date(text, today)
     if written:
         return written["said"]
+    year = rf"(?:{_YEAR_AFTER})?"
     named = date_words.named_day_text(text)
     if named:
-        return named
-    month = re.search(rf"\b(?:in\s+)?(?:{_MONTH_FULL}|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\bin\s+may\b",
-                      text, re.I)
+        return re.search(re.escape(named) + year, text, re.I).group(0)
+    month = re.search(rf"(?:\b(?:in\s+)?(?:{_MONTH_FULL}|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)\b|\bin\s+may\b)"
+                      + year, text, re.I)
     return month.group(0) if month else None
 
 
@@ -508,6 +531,7 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
     text, place_answers = split_place_answers(text)             # first: a chosen name must not be read as text
     text, chosen = split_destination_choice(text)
     text, numeric, unreadable = date_words.take_numeric_date(text)    # so "20/12/2026" is not read as a budget
+    with_year = year_date(text, today) if numeric is None else None
     text, christmas, ahead = date_words.take_named_days(text)         # so "tomorrow" is not part of a place name
     origin, dest, texts = parse_places(text)
     if chosen:
@@ -543,20 +567,26 @@ def parse_request(text: str, today: date, group_size: int = 0) -> dict:
         budget *= travelers
         assumptions.append("Budget read as per person and multiplied by the number of travelers.")
     bad_date = None                      # a date that does not exist is asked about, never quietly moved
-    exact = None
     if numeric is None and christmas is None and ahead is None:
         if written and written["problem"]:
             bad_date, invalid["date"] = written["said"], written["problem"]
-        elif written and written["exact"]:
-            exact = written["exact"]
-        elif unreadable and day is None:
+        elif unreadable and day is None and not with_year:
             bad_date = unreadable
             invalid["date"] = (f"I could not read '{unreadable}' as a date: numbers are read day first "
                                "(day/month/year). Please give a valid start date.")
-    if exact:
-        start, month, date_notes = exact, exact.month, []
-    else:
-        start, month, date_notes = _start_date(numeric, unreadable, christmas, ahead, month, day, today)
+    past_month = None
+    if with_year and "date" not in invalid:
+        said, day_said = with_year
+        if day_said or said > today:
+            numeric = said                                  # a full date: treated like one written in numbers
+        elif (said.year, said.month) == (today.year, today.month):
+            numeric = max(said, today + timedelta(days=3))              # later this month
+        else:
+            past_month = said
+    start, month, date_notes = _start_date(numeric, unreadable, christmas, ahead, month, day, today)
+    if past_month:
+        date_notes.append(f"{calendar.month_name[past_month.month]} {past_month.year} is in the past: assumed the "
+                          f"trip starts {start.isoformat()}.")
     if "date" not in invalid:
         assumptions += date_notes
     constraints = {

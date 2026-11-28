@@ -1,7 +1,7 @@
 """Approval agent: pauses for the traveller, then applies approve, change or cancel."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from app.agents.accommodation_agent import pick_hotel
 from app.agents.destination_agent import find_alternatives, find_place, trip_warnings
@@ -94,10 +94,14 @@ def _apply_changes(state: dict, ch: dict, notes: list[str], deps,
         month, day = ch["month_day"]
         today = date.fromisoformat(c["today"])
         written = intake_mod.word_date(feedback, today)
-        start = written["exact"] if written and written["exact"] else \
-            intake_mod.compute_start_date(month, day, today)[0]
+        said, day_said = intake_mod.year_date(feedback, today) or (None, False)
+        this_month = bool(said) and not day_said and (said.year, said.month) == (today.year, today.month)
+        start = intake_mod.compute_start_date(month, day, today)[0] if said is None else \
+            max(said, today + timedelta(days=3)) if this_month else said
         if written and written["problem"]:
             reject("month_day", "travel dates", written["problem"])
+        elif start <= today:
+            reject("month_day", "travel dates", "That date is in the past. Give a date after today.")
         elif start.isoformat() == c["start_date"]:
             reject("month_day", "travel dates", "The trip already starts on that date.")
         else:

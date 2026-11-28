@@ -4,8 +4,8 @@ import { capitalise, MONTH_NAMES } from "./format.js";
 // the trip as it stands now (after any changes), without a destination
 export function requestFor(constraints) {
   const from = constraints.origin_geo?.name || capitalise(constraints.origin);
-  const [, month, day] = String(constraints.start_date).split("-").map(Number);
-  let text = `Plan a ${constraints.days} day trip from ${from}, starting ${day} ${MONTH_NAMES[month - 1]}, ` +
+  const [year, month, day] = String(constraints.start_date).split("-").map(Number);
+  let text = `Plan a ${constraints.days} day trip from ${from}, starting ${day} ${MONTH_NAMES[month - 1]} ${year}, ` +
     `budget ${constraints.budget} for ${constraints.travelers} people`;
   if (constraints.preferences?.length) {
     text += ", love " + constraints.preferences.map((p) => (p === "family" ? "family-friendly" : p)).join(" and ");

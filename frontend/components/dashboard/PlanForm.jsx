@@ -78,7 +78,6 @@ export default function PlanForm({ tab, onTab, form, onForm, text, onText, onPla
           ))}
         </div>
         {problem && <p id="formError" role="alert">{problem}</p>}
-        {form.date.endsWith("-31") && <p className="hint">The planner will start this trip on the 30th.</p>}
       </form>
 
       <div className={tab === "words" ? "" : "hidden"}>

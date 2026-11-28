@@ -349,7 +349,9 @@ changed since the run before.
 first**; `20/12` without a year is not read. "Christmas" (25 December, "Christmas eve" 24), "tomorrow" and "day after
 tomorrow", with a note that says which date was used. A date that does not exist ("31 February", "31 April",
 "31/02/2027") is not moved to another day: the planner asks for a valid one, and a change request to such a date is
-refused. "29 February 2028" is kept; in other word dates the year is not read. Traveller counts in words up to twelve ("four of us", "two
+refused. A year you write is kept ("25 December 2027",
+"March 2028", "Christmas 2027"), also in change requests; a date that has passed is moved to its next occurrence with
+a note, and a change to a past date is refused. Traveller counts in words up to twelve ("four of us", "two
 adults and one child"), "five nights" (6 days) and "Dilli" for Delhi. These apply to new requests; a change request
 on a finished plan still needs a day and a month in words ("move it to 20 December").
 
