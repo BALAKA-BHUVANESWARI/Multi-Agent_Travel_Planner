@@ -363,11 +363,12 @@ or without recording:
   or place feature (such as a pool, free breakfast, a rating or opening times) that the plan does not hold. You then
   get the standard summary or a standard chat reply. If a check breaks, the AI text is left out too. A sentence that
   only says the plan does not tell ("the plan does not say whether there is a pool") is allowed.
-- A **starting city, trip length or budget** read by an AI is used only when your own words state it ("from Bombay",
-  "a long weekend", "five nights", "fifty thousand"). Otherwise the planner asks, or uses the home city you saved.
-  A city counts when you typed its name, another known name for it, or a spelling one letter off; a hint such as
-  "from the capital" gets a question. The destination
-  is not checked this way: an AI can still supply one you did not name (except when you ask for ideas).
+- A **starting city, destination, trip length or budget** read by an AI is used only when your own words state it
+  ("from Bombay", "a long weekend", "five nights", "fifty thousand"). Otherwise the planner asks; for the starting
+  city it first uses the home city you saved, and for a missing destination it can offer suggestions. A place counts
+  when you typed its name, another known name for it, or a spelling one letter off; a hint such as "from the
+  capital" or "to the capital of Rajasthan" does not count. A name typed only in another script (for example in Hindi) is not
+  recognised by this check either, and a short or two-letters-off spelling can be refused.
 
 Everything else is only recorded and flagged: day and night counts, other values read from a request, and the
 activity ranking (unknown ids are dropped, as before).

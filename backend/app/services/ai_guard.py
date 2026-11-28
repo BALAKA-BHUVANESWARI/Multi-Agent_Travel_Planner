@@ -3,7 +3,8 @@ the traveller sees, and it works with recording switched off.
 
 * An AI summary or chat answer is not shown when it states money, a date, a place name or a hotel or place feature
   that the plan does not hold. If the check itself breaks, the text is not shown either.
-* A starting city, budget or trip length read by an AI is used only when the traveller's own words state it.
+* A starting city, destination, budget or trip length read by an AI is used only when the traveller's own words
+  state it.
 
 This is not proof: only the listed kinds are looked for (see ``fact_checks``), and a true statement can be held back.
 Day and night counts are recorded but do not hold a text back ("spend 2 days on the beach" is a fair thing to say).
@@ -101,13 +102,13 @@ def _spell_out(text: str) -> str:
     return _WORDED_MONEY.sub(number, text)
 
 
-def typed_origin(value: str, text: str, destination: str = "") -> bool:
-    """Whether the traveller's own words name this starting city: as written, by another known name of the same
-    city, or one letter off. The words that name the destination do not also name the start."""
+def typed_place(value: str, text: str, other: str = "") -> bool:
+    """Whether the traveller's own words name this place: as written, by another known name of the same place, or
+    one letter off. ``other`` is the place at the other end of the trip: the words naming it name that end only."""
     try:
         rest = f" {facts._norm(text)} "
-        if destination:                                       # "a trip to Goa" does not say "from Goa"
-            end = facts._norm(destination)
+        if other:                                             # "a trip to Goa" does not say "from Goa"
+            end = facts._norm(other)
             for name in sorted(facts._known_places().get(end, {end}), key=len, reverse=True):
                 if name and f" {name} " in rest:
                     rest = rest.replace(f" {name} ", " | ", 1)

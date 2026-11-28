@@ -18,7 +18,7 @@ export const AI_CHECKS = {
   summary_facts: ["Summary with a place, date, amount or hotel feature not in the plan", "The AI summary is left out; the standard one is shown"],
   chat_facts: ["Chat answer with a place, date, amount or hotel feature not in the plan", "The AI answer is left out; a standard reply is shown"],
   filled_value: ["A starting city, budget or trip length you did not state", "The planner asks you for it"],
-  invented_destination: ["A destination you did not name, when you asked for ideas", "Suggestions are offered instead"],
+  invented_destination: ["A destination you did not name", "The planner offers suggestions or asks you for it"],
 };
 
 export const RULES = {

@@ -15,8 +15,6 @@ from app.tools.errors import ToolError
 from app.observability import recorder as observe
 
 _PLACE_TEXT = re.compile(r"^[A-Za-z\u00c0-\u024f][A-Za-z\u00c0-\u024f .'\u2019-]{1,59}$")
-_WANTS_IDEAS = re.compile(r"\b(suggest|recommend|somewhere|anywhere|any place|where (?:should|can|could|do) "
-                          r"(?:i|we))\b", re.I)
 
 
 def _set_place(parsed: dict, role: str, geo: dict) -> None:

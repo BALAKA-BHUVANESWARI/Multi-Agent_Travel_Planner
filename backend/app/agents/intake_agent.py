@@ -7,7 +7,6 @@ from datetime import date, timedelta
 
 from app.agents.destination_agent import (
     _PLACE_TEXT,
-    _WANTS_IDEAS,
     doubt_message,
     find_suggestions,
     resolve_places,
@@ -51,18 +50,17 @@ def _llm_fill_gaps(parsed: dict, text: str, deps) -> list[str]:
     c, filled = parsed["constraints"], []
     texts = parsed.setdefault("texts", {})
     alts = parsed.setdefault("alts", {})
-    refused = {}                # a starting city, trip length or budget the traveller's words do not state
+    refused = {}                # values the traveller's own words do not state
     for role in ("origin", "destination"):
         v = obj.get(role)
-        if role == "destination" and isinstance(v, str) and _WANTS_IDEAS.search(text) \
-                and v.strip().lower() not in text.lower():
-            observe.event("guardrail", "ai_invented_destination", "rejected", detail=v)
-            continue                        # asked for ideas and never named it: offer suggestions instead
         if c[role] is None and isinstance(v, str) and _PLACE_TEXT.match(v.strip()):
-            if role == "origin" and not ai_guard.typed_origin(
-                    v.strip(), text, texts.get("destination") or c["destination"] or ""):
-                refused[role] = v.strip()
-                observe.event("guardrail", "ai_filled_value", "rejected", field=role)
+            other = "destination" if role == "origin" else "origin"
+            if not ai_guard.typed_place(v.strip(), text, texts.get(other) or c[other] or ""):
+                refused[role] = v.strip()               # never go with a place the traveller did not name
+                if role == "origin":
+                    observe.event("guardrail", "ai_filled_value", "rejected", field=role)
+                else:
+                    observe.event("guardrail", "ai_invented_destination", "rejected", detail=v)
                 continue
             if role not in texts:
                 texts[role] = v.strip()

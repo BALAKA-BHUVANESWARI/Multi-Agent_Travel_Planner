@@ -226,7 +226,8 @@ def _reading(run: _Run, router, case: dict) -> dict:
               for k, v in case["expect"].items()}
     if "travelers" in fields and case["expect"]["travelers"] is not None:
         fields["travelers"]["note"] = "the app never lets the AI fill in the number of travellers"
-    for field, key in (("origin", "origin"), ("days", "days"), ("budget", "budget_inr")):
+    for field, key in (("origin", "origin"), ("destination", "destination"), ("days", "days"),
+                       ("budget", "budget_inr")):
         said = watched.last.get(key)                # what the AI proposed and the app did not take
         if field in fields and rules.get(field) is None and with_ai.get(field) is None and said is not None:
             fields[field]["ai_refused"] = said

@@ -85,7 +85,17 @@ def test_only_a_stated_budget_counts(words, value, ok):
     ("from home to Goa", "Pune", "goa", False), ("a trip from Zzqxv to Goa", "Delhi", "goa", False),
 ])
 def test_only_a_named_starting_city_counts(words, city, destination, ok):
-    assert ai_guard.typed_origin(city, words, destination) is ok
+    assert ai_guard.typed_place(city, words, destination) is ok
+
+
+@pytest.mark.parametrize("words, city, origin, ok", [
+    ("Delhi se Goa jana hai", "Goa", "delhi", True), ("4 days in Bombay from Pune", "Mumbai", "pune", True),
+    ("from Delhi, Gokarna ghoomna hai", "Gokarna", "delhi", True), ("from Delhi to jaipor", "Jaipur", "delhi", True),
+    ("a trip from Delhi", "Goa", "delhi", False), ("a trip from Delhi", "Delhi", "delhi", False),
+    ("a trip from Bombay", "Mumbai", "mumbai", False), ("from Delhi to the capital of Rajasthan", "Jaipur", "delhi", False),
+])
+def test_only_a_named_destination_counts(words, city, origin, ok):
+    assert ai_guard.typed_place(city, words, origin) is ok
 
 
 def ai_reads(values):
@@ -101,6 +111,20 @@ def test_an_unnamed_starting_city_is_asked_for(make):
     state = svc.plan("Plan a 4 day trip to Goa, budget 60000")
     assert state["status"] == "needs_info" and state["constraints"]["origin"] is None
     assert "starting" in state["message"].lower() or "from" in state["message"].lower()
+
+
+@pytest.mark.parametrize("words", ["Plan a 4 day trip from Delhi, budget 60000",
+                                   "Plan a 4 day trip from Delhi to the capital of Rajasthan, budget 60000"])
+def test_an_unnamed_destination_is_never_planned(make, words):
+    svc = ai_service(make, transport=ai_reads({"destination": "Jaipur"}), records=False)
+    state = svc.plan(words)
+    assert state["status"] == "needs_info" and state["constraints"]["destination"] is None
+
+
+def test_a_destination_the_rules_miss_is_still_read_by_the_ai(make):
+    svc = ai_service(make, transport=ai_reads({"destination": "Mumbai"}), records=False)
+    state = svc.plan("Plan a 4 day trip from Delhi, budget 60000, Bombay chalte hain")
+    assert state["constraints"]["destination"] == "mumbai"
 
 
 def test_the_saved_home_city_is_used_instead_of_an_invented_one(make):
